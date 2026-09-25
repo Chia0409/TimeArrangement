@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ mission_date.strftime('%Y/%m/%d') }} 任務總結</h1>
+<p><a href="{{ url_for('home.index') }}">← 回首頁</a></p>
+
+{% if status == 'future' %}
+  <p><em>尚未開放，這一天還沒發生。</em></p>
+{% else %}
+
+  <h2>區塊一：原計畫任務</h2>
+  <table>
+    <thead><tr><th>編號</th><th>名稱</th><th>開始</th><th>結束</th><th>實際時數</th><th>完成</th></tr></thead>
+    <tbody>
+      {% for m in block1 %}
+      <tr>
+        <td>{{ m.mission_no }}-{{ m.segment_no }}</td>
+        <td>{{ m.mission_name }}</td>
+        {% if can_edit_block1 %}
+        <td colspan="4">
+          <form method="post"
+                action="{{ url_for('summary.update_block1', date_str=mission_date.isoformat(), mission_id=m.mission_id) }}">
+            <input type="time" name="start_time" value="{{ m.start_time }}">
+            <input type="time" name="end_time" value="{{ m.end_time }}">
+            <label><input type="checkbox" name="is_finished" {% if m.is_finished %}checked{% endif %}> 完成</label>
+            <!-- <button type="submit">儲存</button> -->
+            <button type="submit">{{ "更新" if m.start_time else "儲存" }}</button>
+          </form>
+        </td>
+        {% else %}
+        <td>{{ m.start_time or '-' }}</td>
+        <td>{{ m.end_time or '-' }}</td>
+        <td>{{ m.actual_hours or '-' }}</td>
+        <td>{{ "✅" if m.is_finished else "—" }}</td>
+        {% endif %}
+      </tr>
+      {% else %}
+      <tr><td colspan="6">當天沒有預計任務</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h2>區塊二：追加任務</h2>
+  <table>
+    <thead><tr><th>名稱</th><th>開始</th><th>結束</th><th>實際時數</th>{% if can_edit_block2 %}<th>操作</th>{% endif %}</tr></thead>
+    <tbody>
+      {% for m in block2 %}
+      <tr>
+        <td>{{ m.mission_name }}</td>
+        <td>{{ m.start_time }}</td>
+        <td>{{ m.end_time }}</td>
+        <td>{{ m.actual_hours }}</td>
+        {% if can_edit_block2 %}
+        <td>
+          <form method="post"
+                action="{{ url_for('summary.delete_block2', date_str=mission_date.isoformat(), mission_id=m.mission_id) }}">
+            <button type="submit">刪除</button>
+          </form>
+        </td>
+        {% endif %}
+      </tr>
+      {% else %}
+      <tr><td colspan="5">尚無追加任務</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {% if can_edit_block2 %}
+  <h3>新增追加任務</h3>
+  <form method="post" action="{{ url_for('summary.add_block2', date_str=mission_date.isoformat()) }}">
+    <input type="text" name="mission_name" placeholder="任務名稱" required>
+    <input type="time" name="start_time" required>
+    <input type="time" name="end_time" required>
+    <button type="submit">新增</button>
+  </form>
+  {% endif %}
+
+{% endif %}
+{% endblock %}

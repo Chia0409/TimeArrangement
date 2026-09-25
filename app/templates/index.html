@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>每日工作紀錄</h1>
+<p>今天：{{ today.strftime('%Y/%m/%d') }}</p>
+
+<table>
+  <thead>
+    <tr><th>日期</th><th>預計執行任務</th><th>任務總結</th></tr>
+  </thead>
+  <tbody>
+    {% for row in week_rows %}
+    <tr>
+      <td>{{ row.date.strftime('%Y/%m/%d') }}</td>
+
+      <!-- <td>
+        {% if row.status == 'past' %}
+          {{ "查看(唯讀)" if row.has_data else "無" }}
+        {% elif row.status == 'today' %}
+          今天預計任務
+        {% else %}
+          安排
+        {% endif %}
+      </td> -->
+      <td>
+        <a href="{{ url_for('plan.plan', date_str=row.date.isoformat()) }}">
+          {% if row.status == 'past' %}
+            {{ "查看(唯讀)" if row.has_data else "無紀錄" }}
+          {% elif row.status == 'today' %}
+            今天預計任務
+          {% else %}
+            安排
+          {% endif %}
+        </a>
+      </td>
+
+      <!-- <td>
+        {% if row.status == 'past' %}
+          {{ "總結(可追加)" if row.has_data else "無" }}
+        {% elif row.status == 'today' %}
+          今天任務總結
+        {% else %}
+          尚未開放
+        {% endif %}
+      </td> -->
+
+      <td>
+        {% if row.status == 'future' %}
+          尚未開放
+        {% else %}
+        <a href="{{ url_for('summary.summary', date_str=row.date.isoformat()) }}">
+          {% if row.status == 'past' %}
+            {{ "總結(可追加)" if row.has_data else "無紀錄" }}
+          {% else %}
+            今天任務總結
+          {% endif %}
+        </a>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

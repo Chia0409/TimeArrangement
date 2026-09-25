@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <title>{% block title %}每日工作紀錄{% endblock %}</title>
+  <style>
+    body { font-family: -apple-system, sans-serif; margin: 2rem; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
+    th { background: #f5f5f5; }
+    .flash { padding: 10px 16px; border-radius: 6px; margin-bottom: 1rem;
+             background: #e6f4ea; color: #1e7e34; border: 1px solid #b7e1c0; }
+  </style>
+</head>
+<body>
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      <div class="flash" id="flash-msg">{{ messages[0] }}</div>
+      <script>
+        setTimeout(() => {
+          const el = document.getElementById('flash-msg');
+          if (el) el.style.display = 'none';
+        }, 2000);
+      </script>
+    {% endif %}
+  {% endwith %}
+
+  {% block content %}{% endblock %}
+</body>
+</html>

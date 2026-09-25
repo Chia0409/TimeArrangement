@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ mission_date.strftime('%Y/%m/%d') }} 預計執行任務</h1>
+<p><a href="{{ url_for('home.index') }}">← 回首頁</a></p>
+
+<table>
+  <thead><tr><th>任務編號</th><th>任務名稱</th><th>預計耗時(hr)</th></tr></thead>
+  <tbody>
+    {% for m in missions %}
+    <tr>
+      <td>{{ m.mission_no }}</td>
+      <td>{{ m.mission_name }}</td>
+      <td>{{ m.estimated_hours }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="3">尚無任務</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% if editable %}
+<h2>新增任務</h2>
+<form method="post">
+  <label>任務名稱：<input type="text" name="mission_name" required></label>
+  <label>預計耗時(hr)：<input type="number" step="0.25" name="estimated_hours" required></label>
+  <button type="submit">新增</button>
+</form>
+{% else %}
+<p><em>過去的日期不可編輯，僅供查看。</em></p>
+{% endif %}
+{% endblock %}
