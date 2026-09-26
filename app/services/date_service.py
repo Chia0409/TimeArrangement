@@ -1,5 +1,5 @@
 from datetime import date, timedelta, datetime
-
+import calendar
 
 def get_day_status(target_date, today=None):
     """比較目標日期跟今天：回傳 'past' / 'today' / 'future'。"""
@@ -39,3 +39,11 @@ def calc_actual_hours(start_time_str, end_time_str):
 
     diff_minutes = to_minutes(end_time_str) - to_minutes(start_time_str)
     return round(diff_minutes / 60, 2)
+
+def get_month_weeks(year, month):
+    """回傳該月份的完整月曆網格：一個list，每個元素是一週(7個date物件)。
+    會自動補上前一個月末尾、下一個月開頭的日期湊滿整週(對照你截圖裡灰色的30日、10月1日)，
+    firstweekday=SUNDAY讓每週從週日開始，對齊Google/Mac日曆的排法。"""
+    cal = calendar.Calendar(firstweekday=calendar.SUNDAY)
+    all_dates = list(cal.itermonthdates(year, month))
+    return [all_dates[i:i + 7] for i in range(0, len(all_dates), 7)]

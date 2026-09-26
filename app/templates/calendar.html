@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block content %}
+<div style="display:flex; justify-content:space-between; align-items:center;">
+  <h1>{{ year }}年{{ month }}月</h1>
+  <div>
+    <a href="{{ url_for('home.calendar_month', year=prev_year, month=prev_month) }}">← 上個月</a>
+    ｜ <a href="{{ url_for('home.index') }}">回首頁</a> ｜
+    <a href="{{ url_for('home.calendar_month', year=next_year, month=next_month) }}">下個月 →</a>
+  </div>
+</div>
+
+<table class="calendar-table">
+  <thead>
+    <tr><th>週日</th><th>週一</th><th>週二</th><th>週三</th><th>週四</th><th>週五</th><th>週六</th></tr>
+  </thead>
+  <tbody>
+    {% for week in calendar_weeks %}
+    <tr>
+      {% for day in week %}
+      <td class="{% if not day.is_current_month %}other-month{% endif %}">
+        <div class="day-number {% if day.is_today %}today-badge{% endif %}">{{ day.date.day }}日</div>
+        {% if day.has_data %}
+          <div class="day-links">
+            <a href="{{ url_for('plan.plan', date_str=day.date.isoformat()) }}">計畫</a>
+            {% if day.status != 'future' %}
+            <a href="{{ url_for('summary.summary', date_str=day.date.isoformat()) }}">總結</a>
+            {% endif %}
+          </div>
+        {% endif %}
+      </td>
+      {% endfor %}
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

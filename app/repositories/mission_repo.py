@@ -83,3 +83,15 @@ def update_mission_plan(user_id, mission_id, mission_name, estimated_hours):
             (mission_name, estimated_hours, mission_id, user_id),
         )
     db.commit()
+
+def get_missions_in_month(user_id, year, month):
+    """撈這個月裡「有出現過任務」的所有日期，用來判斷月曆哪幾格要顯示連結。
+    用set()而不是list，等一下判斷「這天有沒有資料」時查詢速度更快。"""
+    db = get_db()
+    with db.cursor() as cur:
+        cur.execute(
+            """SELECT DISTINCT mission_date FROM daily_mission
+               WHERE user_id = %s AND YEAR(mission_date) = %s AND MONTH(mission_date) = %s""",
+            (user_id, year, month),
+        )
+        return {row["mission_date"] for row in cur.fetchall()}
