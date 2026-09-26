@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>編輯個人資料</h1>
+<p><a href="{{ url_for('home.index') }}">← 回首頁</a></p>
+
+<div>
+  {% if user.avatar_path %}
+    <img src="{{ url_for('static', filename=user.avatar_path) }}" width="100" style="border-radius:50%;">
+  {% else %}
+    <img src="{{ url_for('static', filename='images/default_avatar.png') }}" width="100" style="border-radius:50%;">
+  {% endif %}
+</div>
+
+<form method="post" enctype="multipart/form-data">
+  <label>名稱：<input type="text" name="user_name" value="{{ user.user_name }}" required></label><br><br>
+  <label>Email：<input type="email" name="user_email" value="{{ user.user_email }}" required></label><br><br>
+  <label>更換大頭貼(可略過)：<input type="file" name="avatar" accept="image/*"></label><br><br>
+  <button type="submit">更新</button>
+</form>
+{% endblock %}

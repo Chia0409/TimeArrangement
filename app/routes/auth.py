@@ -1,9 +1,12 @@
 import os
 from werkzeug.utils import secure_filename
 from flask import Blueprint, render_template, request, redirect, url_for, session, flash, current_app
+from pymysql.err import IntegrityError
 
-from app.repositories.user_repo import get_user_by_email, get_user_by_name, create_user, update_password
-from app.services.auth_service import hash_password, verify_password
+from app.services.auth_service import hash_password, verify_password, login_required
+from app.repositories.user_repo import (
+    get_user_by_email, get_user_by_name, get_user_by_id, create_user, update_password, update_user_profile,
+)
 
 auth_bp = Blueprint("auth", __name__)
 ALLOWED_EXT = {"png", "jpg", "jpeg", "gif"}
@@ -79,3 +82,39 @@ def forgot_password():
 def logout():
     session.clear()
     return redirect(url_for("auth.login"))
+
+@auth_bp.route("/profile", methods=["GET", "POST"])
+@login_required
+def profile():
+    user_id = session["user_id"]
+    user = get_user_by_id(user_id)
+
+    if request.method == "POST":
+        new_name = request.form["user_name"]
+        new_email = request.form["user_email"]
+        avatar_path = user["avatar_path"]  # 沒上傳新圖片就沿用原本的路徑
+
+        file = request.files.get("avatar")
+        if file and file.filename and _allowed_file(file.filename):
+            filename = secure_filename(f"{new_name}_{file.filename}")
+            upload_dir = os.path.join(current_app.root_path, "static", "uploads", "avatars")
+            os.makedirs(upload_dir, exist_ok=True)
+            file.save(os.path.join(upload_dir, filename))
+
+            # 有換新圖片的話，把舊檔案刪掉，避免資料夾裡累積一堆用不到的舊圖
+            if user["avatar_path"]:
+                old_file = os.path.join(current_app.root_path, "static", user["avatar_path"])
+                if os.path.exists(old_file):
+                    os.remove(old_file)
+
+            avatar_path = f"uploads/avatars/{filename}"
+
+        try:
+            update_user_profile(user_id, new_name, new_email, avatar_path)
+            flash("個人資料已更新！")
+            return redirect(url_for("auth.profile"))
+        except IntegrityError:
+            flash("這個名稱或Email已經被其他帳號使用了")
+            return render_template("profile.html", user=user)
+
+    return render_template("profile.html", user=user)

@@ -3,20 +3,46 @@
 <h1>{{ mission_date.strftime('%Y/%m/%d') }} 預計執行任務</h1>
 <p><a href="{{ url_for('home.index') }}">← 回首頁</a></p>
 
+<h2>任務安排</h2>
+
+{% if editable %}
+<form method="post" action="{{ url_for('plan.update_missions', date_str=mission_date.isoformat()) }}">
+  <input type="hidden" name="mission_ids" value="{{ mission_ids_str }}">
+  <table>
+    <thead>
+      <tr><th>任務編號</th><th>任務名稱</th><th>預計耗時(hr)</th><th>刪除</th></tr>
+    </thead>
+    <tbody>
+      {% for m in missions %}
+      <tr>
+        <td>{{ m.mission_no }}</td>
+        <td><input type="text" name="mission_name_{{ m.mission_id }}" value="{{ m.mission_name }}" required></td>
+        <td><input type="number" step="0.25" name="estimated_hours_{{ m.mission_id }}" value="{{ m.estimated_hours }}" required style="width:80px;"></td>
+        <td><label><input type="checkbox" name="delete_{{ m.mission_id }}" value="1"> 刪除</label></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4">尚無任務</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if missions %}
+  <br>
+  <button type="submit">儲存</button>
+  {% endif %}
+</form>
+{% else %}
 <table>
   <thead><tr><th>任務編號</th><th>任務名稱</th><th>預計耗時(hr)</th></tr></thead>
   <tbody>
     {% for m in missions %}
-    <tr>
-      <td>{{ m.mission_no }}</td>
-      <td>{{ m.mission_name }}</td>
-      <td>{{ m.estimated_hours }}</td>
-    </tr>
+    <tr><td>{{ m.mission_no }}</td><td>{{ m.mission_name }}</td><td>{{ m.estimated_hours }}</td></tr>
     {% else %}
     <tr><td colspan="3">尚無任務</td></tr>
     {% endfor %}
   </tbody>
 </table>
+<p><em>過去的日期不可編輯，僅供查看。</em></p>
+{% endif %}
 
 {% if editable %}
 <h2>新增任務</h2>
@@ -25,7 +51,5 @@
   <label>預計耗時(hr)：<input type="number" step="0.25" name="estimated_hours" required></label>
   <button type="submit">新增</button>
 </form>
-{% else %}
-<p><em>過去的日期不可編輯，僅供查看。</em></p>
 {% endif %}
 {% endblock %}

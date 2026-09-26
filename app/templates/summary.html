@@ -7,9 +7,9 @@
   <p><em>尚未開放，這一天還沒發生。</em></p>
 {% else %}
 
-  <h2>區塊一：原計畫任務</h2>
+  <h2>原計畫任務</h2>
   <table>
-    <thead><tr><th>編號</th><th>名稱</th><th>開始</th><th>結束</th><th>實際時數</th><th>完成</th></tr></thead>
+    <thead><tr><th>編號</th><th>名稱</th><th>開始</th><th>結束</th><th>實際時數</th><th>是否完成</th></tr></thead>
     <tbody>
       {% for m in block1 %}
       <tr>
@@ -39,7 +39,7 @@
     </tbody>
   </table>
 
-  <h2>區塊二：追加任務</h2>
+  <h2>追加任務</h2>
   <table>
     <thead><tr><th>名稱</th><th>開始</th><th>結束</th><th>實際時數</th>{% if can_edit_block2 %}<th>操作</th>{% endif %}</tr></thead>
     <tbody>

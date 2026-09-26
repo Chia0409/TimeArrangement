@@ -39,3 +39,12 @@ def update_password(user_id, password_hash):
     with db.cursor() as cur:
         cur.execute("UPDATE user_info SET password_hash=%s WHERE user_id=%s", (password_hash, user_id))
     db.commit()
+
+def update_user_profile(user_id, user_name, user_email, avatar_path):
+    db = get_db()
+    with db.cursor() as cur:
+        cur.execute(
+            "UPDATE user_info SET user_name=%s, user_email=%s, avatar_path=%s WHERE user_id=%s",
+            (user_name, user_email, avatar_path, user_id),
+        )
+    db.commit()

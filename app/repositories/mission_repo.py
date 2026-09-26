@@ -73,3 +73,13 @@ def delete_mission(user_id, mission_id):
     with db.cursor() as cur:
         cur.execute("DELETE FROM daily_mission WHERE mission_id=%s AND user_id=%s", (mission_id, user_id))
     db.commit()
+
+def update_mission_plan(user_id, mission_id, mission_name, estimated_hours):
+    """只更新計畫階段的兩個欄位(名稱、預計耗時)，不動到start_time/actual_hours等總結欄位。"""
+    db = get_db()
+    with db.cursor() as cur:
+        cur.execute(
+            "UPDATE daily_mission SET mission_name=%s, estimated_hours=%s WHERE mission_id=%s AND user_id=%s",
+            (mission_name, estimated_hours, mission_id, user_id),
+        )
+    db.commit()
