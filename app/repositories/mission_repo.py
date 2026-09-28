@@ -5,9 +5,11 @@ def get_missions_by_date(user_id, mission_date):
     db = get_db()
     with db.cursor() as cur:
         cur.execute(
-            """SELECT * FROM daily_mission
-               WHERE user_id = %s AND mission_date = %s
-               ORDER BY mission_no, segment_no""",
+            """SELECT dm.*, p.project_name
+               FROM daily_mission dm
+               LEFT JOIN project p ON dm.project_id = p.project_id
+               WHERE dm.user_id = %s AND dm.mission_date = %s
+               ORDER BY dm.mission_no, dm.segment_no""",
             (user_id, mission_date),
         )
         return cur.fetchall()
@@ -105,5 +107,33 @@ def update_mission_result(user_id, mission_id, is_finished, start_time, end_time
                SET is_finished=%s, start_time=%s, end_time=%s, actual_hours=%s
                WHERE mission_id=%s AND user_id=%s""",
             (is_finished, start_time, end_time, actual_hours, mission_id, user_id),
+        )
+    db.commit()
+
+def close_overdue_missions(user_id, today):
+    """日期早於今天、原計畫任務、還沒回報 → 自動標成未完成(0)。
+    重複執行也安全：關過的任務is_finished不再是NULL，不會再被WHERE選中。"""
+    db = get_db()
+    with db.cursor() as cur:
+        cur.execute(
+            """UPDATE daily_mission SET is_finished = 0
+               WHERE user_id = %s AND mission_date < %s
+                 AND is_added = 0 AND is_finished IS NULL""",
+            (user_id, today),
+        )
+    db.commit()
+
+
+def update_original_mission_result(user_id, mission_id, is_finished, start_time, end_time,
+                                   actual_hours, is_long_term, project_id):
+    db = get_db()
+    with db.cursor() as cur:
+        cur.execute(
+            """UPDATE daily_mission
+               SET is_finished=%s, start_time=%s, end_time=%s, actual_hours=%s,
+                   is_long_term=%s, project_id=%s
+               WHERE mission_id=%s AND user_id=%s""",
+            (is_finished, start_time, end_time, actual_hours,
+             is_long_term, project_id, mission_id, user_id),
         )
     db.commit()
