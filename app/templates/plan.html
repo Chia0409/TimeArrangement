@@ -2,7 +2,7 @@
 {% block content %}
 <h1>{{ mission_date.strftime('%Y/%m/%d') }} 預計執行任務</h1>
 <p><a href="{{ url_for('home.index') }}">← 回首頁</a></p>
-
+<p><a href="{{ url_for('home.calendar_view') }}">查看月曆</a></p>
 <h2>任務安排</h2>
 
 {% if editable %}

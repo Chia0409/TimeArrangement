@@ -85,7 +85,7 @@ def add_mission_ajax(date_str):
         "mission_name": name,
         "estimated_hours": hours,
         "start_time": None, "end_time": None, "actual_hours": None,
-        "is_finished": 0, "is_long_term": 0, "is_added": 0,
+        "is_finished": None, "is_long_term": 0, "is_added": 0,
         "project_id": None, "notfinished_mission_id": None,
     })
     return jsonify(success=True, mission_id=mission_id, mission_no=mission_no)

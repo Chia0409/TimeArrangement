@@ -95,3 +95,15 @@ def get_missions_in_month(user_id, year, month):
             (user_id, year, month),
         )
         return {row["mission_date"] for row in cur.fetchall()}
+    
+def update_mission_result(user_id, mission_id, is_finished, start_time, end_time, actual_hours):
+    """更新「完成狀態＋開始/結束時間＋實際工時」，原計畫任務跟追加任務共用這支。"""
+    db = get_db()
+    with db.cursor() as cur:
+        cur.execute(
+            """UPDATE daily_mission
+               SET is_finished=%s, start_time=%s, end_time=%s, actual_hours=%s
+               WHERE mission_id=%s AND user_id=%s""",
+            (is_finished, start_time, end_time, actual_hours, mission_id, user_id),
+        )
+    db.commit()
