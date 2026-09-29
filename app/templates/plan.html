@@ -15,7 +15,7 @@
     <tr data-mission-id="{{ m.mission_id }}">
       <td class="mission-no">{{ m.mission_no }}</td>
       <td><input type="text" class="name-input" value="{{ m.mission_name }}" required></td>
-      <td><input type="number" step="0.25" class="hours-input" value="{{ m.estimated_hours }}" required style="width:80px;"></td>
+      <td><input type="number" step="0.25" class="hours-input" value="{{ m.estimated_hours }}" required "></td>
       <td>
         <button type="button" class="save-btn">儲存</button>
         <button type="button" class="delete-btn">刪除</button>
@@ -108,7 +108,7 @@ document.getElementById("add-row-btn").addEventListener("click", function () {
   tr.innerHTML = `
     <td class="mission-no">新</td>
     <td><input type="text" class="name-input" required></td>
-    <td><input type="number" step="0.25" class="hours-input" required style="width:80px;"></td>
+    <td><input type="number" step="0.25" class="hours-input" required"></td>
     <td>
       <button type="button" class="save-btn">儲存</button>
       <button type="button" class="delete-btn">刪除</button>

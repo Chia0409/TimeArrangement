@@ -111,12 +111,11 @@ def update_mission_result(user_id, mission_id, is_finished, start_time, end_time
     db.commit()
 
 def close_overdue_missions(user_id, today):
-    """日期早於今天、原計畫任務、還沒回報 → 自動標成未完成(0)。
-    重複執行也安全：關過的任務is_finished不再是NULL，不會再被WHERE選中。"""
+    """過期未回報的原計畫任務 → 標成未完成(0)，並蓋上「系統代標」記號(is_auto_closed=1)。"""
     db = get_db()
     with db.cursor() as cur:
         cur.execute(
-            """UPDATE daily_mission SET is_finished = 0
+            """UPDATE daily_mission SET is_finished = 0, is_auto_closed = 1
                WHERE user_id = %s AND mission_date < %s
                  AND is_added = 0 AND is_finished IS NULL""",
             (user_id, today),

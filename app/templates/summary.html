@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
-<style>.project-picker { margin-top: 6px; }</style>
+
 
 <h1>{{ mission_date.strftime('%Y/%m/%d') }} 任務總結</h1>
 <p><a href="{{ url_for('home.index') }}">← 回首頁</a></p>
@@ -63,7 +63,8 @@
             <option value="0" {% if not m.is_long_term %}selected{% endif %}>否</option>
             <option value="1" {% if m.is_long_term %}selected{% endif %}>是</option>
           </select>
-          <div class="project-picker" data-selected-project="{{ m.project_id or '' }}" {% if not m.is_long_term %}hidden{% endif %}>
+          {% if m.is_auto_closed %}<span class="auto-badge">系統代標</span>{% endif %}
+          <div class="project-picker" data-selected-project="{{ m.project_id or '' }}" data-selected-name="{{ m.project_name or '' }}" {% if not m.is_long_term %}hidden{% endif %}>
             <select class="project-select"></select>
             <input type="text" class="new-project-input" placeholder="新長期任務名稱" hidden>
           </div>
@@ -142,15 +143,29 @@ function loadProjects() {
     .then((res) => res.json())
     .then((data) => { projectCache = data.projects; return projectCache; });
 }
-
+// genime modified
 function fillProjectSelect(picker, selectedId) {
   const select = picker.querySelector(".project-select");
+  const newInput = picker.querySelector(".new-project-input"); // ✅ 抓取輸入框
+  
   loadProjects().then((projects) => {
     select.innerHTML = "";
     select.add(new Option("請選擇長期任務", ""));
-    projects.forEach((p) => select.add(new Option(p.project_name, p.project_id)));  // 就是JS版的 for p in projects
+    projects.forEach((p) => select.add(new Option(p.project_name, p.project_id)));
     select.add(new Option("＋ 新增長期任務…", "__new__"));
-    if (selectedId) select.value = String(selectedId);
+    
+    if (selectedId) {
+      const exists = [...select.options].some((o) => o.value === String(selectedId));
+      if (!exists && picker.dataset.selectedName) {
+        select.add(new Option(picker.dataset.selectedName + "（已完成）", selectedId), select.options.length - 1);
+      }
+      select.value = String(selectedId);
+    }
+
+    // ✅ 填入選項後，只有當選中的數值為 "__new__" 時才顯示輸入框
+    if (newInput) {
+      newInput.hidden = (select.value !== "__new__");
+    }
   });
 }
 
@@ -191,6 +206,8 @@ function bindLongtermEvents(tbody) {
     if (e.target.classList.contains("longterm-select")) {
       if (e.target.value === "1") {
         picker.hidden = false;
+        newInput.hidden = true;
+        newInput.value = "";
         fillProjectSelect(picker, null);
       } else {
         picker.hidden = true;

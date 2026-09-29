@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block content %}
+<style>tr[data-finished="1"] td, tr[data-finished="1"] .name-input { color: #999; }</style>
+
+<h1>長期任務管理</h1>
+<p><a href="{{ url_for('home.index') }}">← 回首頁</a></p>
+
+<table>
+  <thead>
+    <tr><th>長期任務名稱</th><th>開始日</th><th>狀態</th><th>出現次數</th><th>累計時數</th>
+        <th>完成</th><th>沒做完</th><th>忘記回報</th><th>操作</th></tr>
+  </thead>
+  <tbody id="project-tbody">
+    {% for p in projects %}
+    <tr data-project-id="{{ p.project_id }}" data-finished="{{ p.is_finished }}">
+      <td><input type="text" class="name-input" value="{{ p.project_name }}"></td>
+      <td class="start-date">{{ p.start_date.strftime('%Y/%m/%d') }}</td>
+      <td class="status-cell">{{ "已完成" if p.is_finished else "進行中" }}</td>
+      <td>{{ p.record_count }}</td>
+      <td>{{ p.total_hours }}</td>
+      <td>{{ p.done_count }}</td>
+      <td>{{ p.undone_count }}</td>
+      <td>{{ p.forgot_count }}</td>
+      <td>
+        <button type="button" class="save-btn">儲存</button>
+        <button type="button" class="toggle-btn">{{ "重新開啟" if p.is_finished else "標記完成" }}</button>
+        <button type="button" class="delete-btn">刪除</button>
+      </td>
+    </tr>
+    {% else %}
+    <tr class="empty-row"><td colspan="9">還沒有長期任務，按下方按鈕新增一個吧</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+<br>
+<button type="button" id="add-project-btn">＋ 新增長期任務</button>
+
+<script>
+const rowUrlBase = "{{ url_for('project.update_project', project_id=0) }}".replace("/0/update", "");
+const addUrl = "{{ url_for('project.add_project') }}";
+const tbody = document.getElementById("project-tbody");
+
+function flashDone(btn, text) {
+  const original = btn.textContent;
+  btn.textContent = text;
+  btn.disabled = true;
+  setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 1000);
+}
+
+tbody.addEventListener("click", function (e) {
+  const row = e.target.closest("tr");
+  if (!row || row.classList.contains("empty-row")) return;
+  const id = row.dataset.projectId;          // 新增列還沒存過，這裡是undefined
+  const nameInput = row.querySelector(".name-input");
+
+  // ---------- 儲存：新增列打add，既有列打update ----------
+  if (e.target.classList.contains("save-btn")) {
+    const name = nameInput.value.trim();
+    if (!name) { alert("長期任務名稱不能空白"); nameInput.focus(); return; }
+
+    const body = new URLSearchParams({ project_name: name });
+    const req = id
+      ? fetch(`${rowUrlBase}/${id}/update`, { method: "POST", body })
+      : fetch(addUrl, { method: "POST", body });
+
+    req.then((res) => res.json())
+      .then((data) => {
+        if (!data.success) { alert(data.message || "儲存失敗"); return; }
+        if (!id) {
+          row.dataset.projectId = data.project_id;
+          row.querySelector(".start-date").textContent = data.start_date;
+          row.querySelector(".status-cell").textContent = "進行中";
+          row.querySelector(".toggle-btn").hidden = false;
+        }
+        flashDone(e.target, "已儲存 ✓");
+      })
+      .catch(() => alert("網路錯誤，儲存失敗"));
+    return;
+  }
+
+  // ---------- 標記完成 / 重新開啟 ----------
+  if (e.target.classList.contains("toggle-btn")) {
+    const finish = row.dataset.finished === "1" ? "0" : "1";
+    fetch(`${rowUrlBase}/${id}/toggle`, { method: "POST", body: new URLSearchParams({ finish }) })
+      .then((res) => res.json())
+      .then((data) => {
+        if (!data.success) { alert(data.message || "操作失敗"); return; }
+        row.dataset.finished = String(data.is_finished);
+        row.querySelector(".status-cell").textContent = data.is_finished ? "已完成" : "進行中";
+        e.target.textContent = data.is_finished ? "重新開啟" : "標記完成";
+      })
+      .catch(() => alert("網路錯誤，操作失敗"));
+    return;
+  }
+
+  // ---------- 刪除 ----------
+  if (e.target.classList.contains("delete-btn")) {
+    if (!id) { row.remove(); return; }             // 還沒存過的新列，直接從畫面拿掉
+    if (!confirm("確定要刪除這個長期任務嗎？")) return;
+
+    fetch(`${rowUrlBase}/${id}/delete`, { method: "POST" })
+      .then((res) => res.json())
+      .then((data) => { if (data.success) row.remove(); else alert(data.message || "刪除失敗"); })
+      .catch(() => alert("網路錯誤，刪除失敗"));
+  }
+});
+
+document.getElementById("add-project-btn").addEventListener("click", function () {
+  const empty = tbody.querySelector(".empty-row");
+  if (empty) empty.remove();
+
+  const tr = document.createElement("tr");
+  tr.dataset.finished = "0";
+  tr.innerHTML = `
+    <td><input type="text" class="name-input" placeholder="長期任務名稱"></td>
+    <td class="start-date">—</td>
+    <td class="status-cell">尚未儲存</td>
+    <td>0</td><td>0</td><td>0</td><td>0</td><td>0</td>
+    <td>
+      <button type="button" class="save-btn">儲存</button>
+      <button type="button" class="toggle-btn" hidden>標記完成</button>
+      <button type="button" class="delete-btn">刪除</button>
+    </td>`;
+  tbody.appendChild(tr);
+  tr.querySelector(".name-input").focus();
+});
+</script>
+{% endblock %}

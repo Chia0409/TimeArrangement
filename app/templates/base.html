@@ -19,6 +19,115 @@
     }
     .day-links { margin-top: 6px; font-size: 0.85em; }
     .day-links a { margin-right: 8px; }
+    /* ===== 下拉選單(select)統一樣式：與欄位貼齊、無框線 ===== */
+    select {
+      -webkit-appearance: none;
+      appearance: none;
+      border: none;
+      outline: none;
+      margin: 0;
+      background-color: transparent;
+      /* 沒有框線後容易看不出是下拉選單，所以自己畫一個小箭頭當提示 */
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23888'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 10px center;
+      font: inherit;
+      color: inherit;
+      cursor: pointer;
+      text-align: center;
+      text-align-last: center;
+    }
+    button {
+      -webkit-appearance: none;
+      appearance: none;
+      border: none;
+      outline: none;
+      margin: 0;
+      background-color: transparent;
+      background-repeat: no-repeat;
+      background-position: right 10px center;
+      font: inherit;
+      color: inherit;
+      cursor: pointer;
+      text-align: center;
+      text-align-last: center;
+    }
+    /* 1. 將含有 input 的表格格子內距歸零，交由 input 自己填滿 */
+    td:has(> input) {
+      padding: 0;
+    }
+
+    /* 2. 讓 input 完全貼齊並撐滿整個 td 的寬與高（加:not([hidden])避免蓋掉隱藏狀態） */
+    td input[type="text"]:not([hidden]),
+    td input[type="number"]:not([hidden]),
+    td input[type="time"]:not([hidden]) {
+      display: block;
+      width: 100%;
+      height: 100%;
+      min-height: 38px; /* 確保空值或高度未指定時有統一的基礎高度 */
+      box-sizing: border-box; /* 確保 padding 不會把寬高撐爆 */
+      border: none;
+      outline: none;
+      margin: 0;
+      padding: 8px; /* 設定內距，確保輸入文字不會緊貼邊界 */
+      background-color: transparent;
+      font: inherit;
+      color: inherit;
+      text-align: center;
+    }
+
+    /* 3. 懸停與聚焦時的背景回饋（與 select 保持一致） */
+    td input[type="text"]:hover,
+    td input[type="number"]:hover,
+    td input[type="time"]:hover {
+      background-color: #f0f4ff;
+      cursor: pointer;
+    }
+
+    td input[type="text"]:focus,
+    td input[type="number"]:focus,
+    td input[type="time"]:focus {
+      background-color: #e6efff;
+      cursor: pointer;
+    }
+
+    /* 貼齊欄位：表格裡的select撐滿整格，並把含有select的格子內距歸零 */
+    td select {
+      display: block;
+      width: 100%;
+      box-sizing: border-box;
+      padding: 10px 28px;
+    }
+    td:has(> select) { padding: 0; }
+
+    /* 沒有框線，就用底色變化當作互動回饋 */
+    select:hover:not(:disabled) { background-color: #f0f4ff; }
+    select:focus { background-color: #e6efff; }
+
+    /* 已鎖定(disabled)的下拉：看起來就是一般文字，沒有箭頭 */
+    select:disabled {
+      cursor: default;
+      opacity: 1;
+      background-image: none;
+      -webkit-text-fill-color: currentColor;
+    }
+
+    /* 長期任務欄裡「新增專案名稱」的輸入框，格子內距歸零後要自己留邊 */
+    .project-picker .new-project-input:not([hidden]) {
+      display: block;
+      width: calc(100% - 16px);
+      box-sizing: border-box;
+      margin: 6px 8px;
+    }
+
+    /* 「系統代標」小標籤 */
+    .auto-badge {
+      display: block;
+      font-size: 0.8em;
+      color: #c0392b;
+      padding-bottom: 6px;
+    }
+
   </style>
 </head>
 <body>
