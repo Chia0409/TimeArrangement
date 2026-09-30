@@ -1,6 +1,7 @@
 from datetime import datetime, date
 from flask import Blueprint, render_template, request, session, jsonify
 
+from app.services.auth_service import login_required
 from app.services.date_service import get_day_status, calc_actual_hours
 from app.repositories.mission_repo import (
     get_missions_by_date, get_next_mission_no, insert_mission,
@@ -10,7 +11,8 @@ from app.repositories.mission_repo import (
 from app.repositories.project_repo import (
     get_unfinished_projects, get_project, get_or_create_project,
 )
-from app.services.auth_service import login_required
+from app.repositories.notfinished_repo import track_mission_status
+
 
 summary_bp = Blueprint("summary", __name__)
 
@@ -127,6 +129,7 @@ def save_original_mission(date_str, mission_id):
 
     update_original_mission_result(user_id, mission_id, int(is_finished),
                                    start_time, end_time, actual_hours, is_long_term, project_id)
+    track_mission_status(user_id, mission_id, mission_date, int(is_finished))
     return jsonify(
         success=True, is_finished=int(is_finished),
         start_time=start_time, end_time=end_time, actual_hours=actual_hours,
@@ -165,6 +168,7 @@ def add_added_mission(date_str):
         "is_long_term": 0, "is_added": 1,
         "project_id": None, "notfinished_mission_id": None,
     })
+    track_mission_status(user_id, mission_id, mission_date, int(is_finished) if is_finished in ("0", "1") else 1)
     return jsonify(success=True, mission_id=mission_id, mission_no=mission_no)
 
 
@@ -185,6 +189,8 @@ def update_added_mission(date_str, mission_id):
         int(is_finished) if is_finished in ("0", "1") else 1,
         start_time, end_time, _compute_hours(start_time, end_time),
     )
+
+    track_mission_status(user_id, mission_id, mission_date, int(is_finished) if is_finished in ("0", "1") else 1)
     return jsonify(success=True)
 
 

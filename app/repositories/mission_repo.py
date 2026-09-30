@@ -111,7 +111,7 @@ def update_mission_result(user_id, mission_id, is_finished, start_time, end_time
     db.commit()
 
 def close_overdue_missions(user_id, today):
-    """過期未回報的原計畫任務 → 標成未完成(0)，並蓋上「系統代標」記號(is_auto_closed=1)。"""
+    """過期未回報 → 標成未完成+系統代標，並各自建立、串上notfinished_mission追蹤紀錄。"""
     db = get_db()
     with db.cursor() as cur:
         cur.execute(
@@ -119,6 +119,20 @@ def close_overdue_missions(user_id, today):
                WHERE user_id = %s AND mission_date < %s
                  AND is_added = 0 AND is_finished IS NULL""",
             (user_id, today),
+        )
+        cur.execute(
+            """INSERT INTO notfinished_mission (user_id, mission_id, status, start_date)
+               SELECT user_id, mission_id, 'open', mission_date
+               FROM daily_mission
+               WHERE user_id = %s AND is_auto_closed = 1 AND notfinished_mission_id IS NULL""",
+            (user_id,),
+        )
+        cur.execute(
+            """UPDATE daily_mission dm
+               JOIN notfinished_mission nm ON nm.mission_id = dm.mission_id
+               SET dm.notfinished_mission_id = nm.notfinished_mission_id
+               WHERE dm.user_id = %s AND dm.notfinished_mission_id IS NULL AND dm.is_finished = 0""",
+            (user_id,),
         )
     db.commit()
 

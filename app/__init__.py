@@ -55,13 +55,15 @@ def create_app():
     from app.routes.summary import summary_bp  # fifth
     from app.routes.auth import auth_bp # user_add
     from app.routes.project import project_bp # project_add
-    
+    from app.routes.notfinished import notfinished_bp  # notfinished_add
+
 
     app.register_blueprint(home_bp)
     app.register_blueprint(plan_bp) # forth
     app.register_blueprint(summary_bp) # fifth
     app.register_blueprint(auth_bp) # user_add
     app.register_blueprint(project_bp) # project_add
+    app.register_blueprint(notfinished_bp)  # notfinished_add
 
     @app.context_processor
     def inject_current_user():
