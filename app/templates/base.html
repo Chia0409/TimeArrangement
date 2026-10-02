@@ -52,6 +52,11 @@
       text-align: center;
       text-align-last: center;
     }
+    button [type="time"]:hover {
+      background-color: #f0f4ff;
+      cursor: pointer;
+    }
+
     /* 1. 將含有 input 的表格格子內距歸零，交由 input 自己填滿 */
     td:has(> input) {
       padding: 0;
@@ -127,7 +132,19 @@
       color: #c0392b;
       padding-bottom: 6px;
     }
-
+    /* ===== 頁面調控器(switch開關) ===== */
+    .switch { position: relative; display: inline-block; width: 46px; height: 24px; vertical-align: middle; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .switch .slider {
+      position: absolute; inset: 0; cursor: pointer;
+      background-color: #ccc; border-radius: 24px; transition: .2s;
+    }
+    .switch .slider::before {
+      position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px;
+      background-color: white; border-radius: 50%; transition: .2s;
+    }
+    .switch input:checked + .slider { background-color: #4c8bf5; }
+    .switch input:checked + .slider::before { transform: translateX(22px); }
   </style>
 </head>
 <body>

@@ -3,87 +3,239 @@
 <h1>未完成任務管理</h1>
 <p><a href="{{ url_for('home.index') }}">← 回首頁</a></p>
 
-<table>
-  <thead><tr><th>任務名稱</th><th>建置日</th><th>懸掛天數</th><th>狀態</th><th>操作</th></tr></thead>
-  <tbody id="notfinished-tbody">
-    {% for n in items %}
-    <tr data-notfinished-id="{{ n.notfinished_mission_id }}">
-      <td>{{ n.mission_name }}</td>
-      <td>{{ n.start_date.strftime('%Y/%m/%d') }}</td>
-      <td>{{ n.pending_days }} 天</td>
-      <td class="status-cell">
-        <select class="status-select">
-          <option value="open" selected>未完成</option>
-          <option value="resolved">已完成</option>
-          <option value="closed">強制結束</option>
-          <option value="convert">轉為長期任務</option>
-        </select>
-        <div class="reason-box" data-for="resolved" hidden>
-          <input type="text" class="delayed-reason-input" placeholder="延遲原因(可留空)">
-        </div>
-        <div class="reason-box" data-for="closed" hidden>
-          <input type="text" class="closed-reason-input" placeholder="結束原因(可留空)">
-        </div>
-        <div class="reason-box" data-for="convert" hidden>
-          <input type="text" class="project-name-input" value="{{ n.mission_name }}" placeholder="長期任務名稱">
-        </div>
-      </td>
-      <td><button type="button" class="save-btn" disabled>儲存</button></td>
-    </tr>
-    {% else %}
-    <tr><td colspan="5">目前沒有懸掛中的未完成任務</td></tr>
-    {% endfor %}
-  </tbody>
-</table>
+<p>
+  <label class="switch">
+    <input type="checkbox" id="view-toggle">
+    <span class="slider"></span>
+  </label>
+  <span id="view-label">目前顯示：未完成</span>
+</p>
+
+<!-- ========== 未完成清單 ========== -->
+<div id="open-view">
+  <table>
+    <thead><tr><th>任務名稱</th><th>建置日</th><th>懸掛天數</th><th>狀態</th><th>操作</th></tr></thead>
+    <tbody id="open-tbody">
+      {% for n in items %}
+      <tr data-notfinished-id="{{ n.notfinished_mission_id }}">
+        <td>{{ n.mission_name }}</td>
+        <td>{{ n.start_date.strftime('%Y/%m/%d') }}</td>
+        <td>{{ n.pending_days }} 天</td>
+        <td class="status-cell"></td>
+        <td><button type="button" class="save-btn" disabled>儲存</button></td>
+      </tr>
+      {% else %}
+      <tr class="empty-row"><td colspan="5">目前沒有懸掛中的未完成任務</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- ========== 已處理清單(含篩選器) ========== -->
+<div id="processed-view" hidden>
+  <div class="filter-bar" style="border:1px solid #ddd; border-radius:6px; padding:10px; margin-bottom:12px;">
+    <label>建置年/月：<input type="month" id="filter-year-month"></label>
+    &nbsp;&nbsp;
+    <label>懸掛天數：
+      <select id="filter-pending-op">
+        <option value="">不限</option>
+        <option value=">">&gt;</option>
+        <option value="=">=</option>
+        <option value="<">&lt;</option>
+      </select>
+      <input type="number" id="filter-pending-days" min="0" style="width:70px;">
+    </label>
+    &nbsp;&nbsp;
+    <label>狀態：
+      <select id="filter-status">
+        <option value="">不限</option>
+        <option value="resolved">已完成</option>
+        <option value="closed">強制結束</option>
+        <option value="converted">轉為長期任務</option>
+      </select>
+    </label>
+    &nbsp;&nbsp;
+    <button type="button" id="apply-filter-btn">套用篩選</button>
+  </div>
+
+  <table>
+    <thead><tr><th>任務名稱</th><th>建置日</th><th>結束日</th><th>懸掛天數</th><th>狀態</th><th>操作</th></tr></thead>
+    <tbody id="processed-tbody">
+      <tr class="empty-row"><td colspan="6">切換開關以載入資料</td></tr>
+    </tbody>
+  </table>
+</div>
 
 <script>
-const resolveUrlBase = "{{ url_for('notfinished.resolve_mission', notfinished_mission_id=0) }}".replace("/0/resolve", "");
-const closeUrlBase   = "{{ url_for('notfinished.close_mission', notfinished_mission_id=0) }}".replace("/0/close", "");
-const convertUrlBase = "{{ url_for('notfinished.convert_mission', notfinished_mission_id=0) }}".replace("/0/convert", "");
-const tbody = document.getElementById("notfinished-tbody");
+const resolveUrlBase  = "{{ url_for('notfinished.resolve_mission', notfinished_mission_id=0) }}".replace("/0/resolve", "");
+const closeUrlBase    = "{{ url_for('notfinished.close_mission', notfinished_mission_id=0) }}".replace("/0/close", "");
+const reopenUrlBase   = "{{ url_for('notfinished.reopen_mission', notfinished_mission_id=0) }}".replace("/0/reopen", "");
+const convertNewBase  = "{{ url_for('notfinished.convert_new', notfinished_mission_id=0) }}".replace("/0/convert-new", "");
+const convertExistBase= "{{ url_for('notfinished.convert_existing', notfinished_mission_id=0) }}".replace("/0/convert-existing", "");
+const processedApiUrl = "{{ url_for('notfinished.processed_list_api') }}";
+const projectsUrl     = "{{ url_for('summary.list_projects') }}";  // 沿用任務總結頁同一支API
 
-// 選單一改變：先把這一列的三個理由框全部藏起來，再依選到的值決定要不要顯示哪一個
-tbody.addEventListener("change", function (e) {
-  if (!e.target.classList.contains("status-select")) return;
-  const row = e.target.closest("tr");
-  const value = e.target.value;
+let projectCache = null;
+function loadProjects() {
+  if (projectCache) return Promise.resolve(projectCache);
+  return fetch(projectsUrl).then((res) => res.json()).then((data) => { projectCache = data.projects; return projectCache; });
+}
 
+// ---------- 組出「狀態欄」的HTML：下拉選單 + 三種理由/專案輸入框 ----------
+function buildStatusCell(currentStatus, allowReopen) {
+  if (currentStatus === "converted") {
+    return `<span>已轉為長期任務（不可再變更）</span>`;
+  }
+  const reopenOption = allowReopen ? `<option value="open">未完成（復原）</option>` : "";
+  return `
+    <select class="status-select">
+      ${reopenOption}
+      <option value="resolved">已完成</option>
+      <option value="closed">強制結束</option>
+      <option value="convert_new">轉為長期任務（新建）</option>
+      <option value="convert_existing">轉為長期任務（現有）</option>
+    </select>
+    <div class="reason-box" data-for="resolved" hidden><input type="text" class="delayed-reason-input" placeholder="延遲原因(可留空)"></div>
+    <div class="reason-box" data-for="closed" hidden><input type="text" class="closed-reason-input" placeholder="結束原因(可留空)"></div>
+    <div class="reason-box" data-for="convert_new" hidden><input type="text" class="project-name-input" placeholder="長期任務名稱"></div>
+    <div class="reason-box" data-for="convert_existing" hidden><select class="project-select"></select></div>
+  `;
+}
+
+function syncReasonBoxes(row) {
+  const select = row.querySelector(".status-select");
+  if (!select) return;
+  const value = select.value;
   row.querySelectorAll(".reason-box").forEach((box) => { box.hidden = box.dataset.for !== value; });
-  row.querySelector(".save-btn").disabled = (value === "open");  // 選回「未完成」代表不做任何動作
-});
+  const saveBtn = row.querySelector(".save-btn");
+  if (saveBtn) saveBtn.disabled = (value === select.dataset.original);
+  if (value === "convert_existing") {
+    const picker = row.querySelector(".project-select");
+    if (picker && !picker.dataset.loaded) {
+      loadProjects().then((projects) => {
+        picker.innerHTML = "";
+        picker.add(new Option("請選擇長期任務", ""));
+        projects.forEach((p) => picker.add(new Option(p.project_name, p.project_id)));
+        picker.dataset.loaded = "1";
+      });
+    }
+  }
+}
 
-tbody.addEventListener("click", function (e) {
-  if (!e.target.classList.contains("save-btn")) return;
-  const row = e.target.closest("tr");
+// ---------- 存檔：依目前選到的狀態決定打哪支API ----------
+function saveRow(row) {
   const id = row.dataset.notfinishedId;
   const status = row.querySelector(".status-select").value;
-
   let url, body;
-  if (status === "resolved") {
+
+  if (status === "open") {
+    url = `${reopenUrlBase}/${id}/reopen`; body = new URLSearchParams();
+  } else if (status === "resolved") {
     url = `${resolveUrlBase}/${id}/resolve`;
     body = new URLSearchParams({ delayed_reason: row.querySelector(".delayed-reason-input").value.trim() });
   } else if (status === "closed") {
     url = `${closeUrlBase}/${id}/close`;
     body = new URLSearchParams({ closed_reason: row.querySelector(".closed-reason-input").value.trim() });
-  } else if (status === "convert") {
-    const projectName = row.querySelector(".project-name-input").value.trim();
-    if (!projectName) { alert("長期任務名稱不能空白"); return; }
-    url = `${convertUrlBase}/${id}/convert`;
-    body = new URLSearchParams({ project_name: projectName });
+  } else if (status === "convert_new") {
+    const name = row.querySelector(".project-name-input").value.trim();
+    if (!name) { alert("長期任務名稱不能空白"); return; }
+    url = `${convertNewBase}/${id}/convert-new`; body = new URLSearchParams({ project_name: name });
+  } else if (status === "convert_existing") {
+    const pid = row.querySelector(".project-select").value;
+    if (!pid) { alert("請選擇一個長期任務"); return; }
+    url = `${convertExistBase}/${id}/convert-existing`; body = new URLSearchParams({ project_id: pid });
   } else {
-    return;  // 還停在「未完成」，按鈕本來就是disabled，理論上不會走到這
+    return;
   }
 
   fetch(url, { method: "POST", body })
     .then((res) => res.json())
     .then((data) => {
       if (!data.success) { alert(data.message || "操作失敗"); return; }
-      row.remove();  // 這筆已經離開「未完成」狀態，直接從清單移除
-      if (!tbody.querySelector("tr")) {
-        tbody.innerHTML = '<tr><td colspan="5">目前沒有懸掛中的未完成任務</td></tr>';
-      }
+      row.remove();
     })
     .catch(() => alert("網路錯誤，操作失敗"));
+}
+
+function bindTable(tbody) {
+  tbody.addEventListener("change", (e) => {
+    if (e.target.classList.contains("status-select")) syncReasonBoxes(e.target.closest("tr"));
+  });
+  tbody.addEventListener("click", (e) => {
+    if (e.target.classList.contains("save-btn")) saveRow(e.target.closest("tr"));
+  });
+}
+
+// ---------- 未完成表：頁面載入時就補上狀態欄(這批資料狀態固定是open，不用等AJAX) ----------
+const openTbody = document.getElementById("open-tbody");
+bindTable(openTbody);
+openTbody.querySelectorAll("tr[data-notfinished-id]").forEach((row) => {
+  const cell = row.querySelector(".status-cell");
+  cell.innerHTML = buildStatusCell("open", false);
+  row.querySelector(".status-select").dataset.original = "open";
+  syncReasonBoxes(row);
+});
+
+// ---------- 已處理表：切換開關才載入(AJAX) ----------
+const processedTbody = document.getElementById("processed-tbody");
+bindTable(processedTbody);
+
+function renderProcessedRow(item) {
+  const tr = document.createElement("tr");
+  tr.dataset.notfinishedId = item.notfinished_mission_id;
+  tr.innerHTML = `
+    <td>${item.mission_name}</td>
+    <td>${item.start_date}</td>
+    <td>${item.finish_date}</td>
+    <td>${item.pending_days} 天</td>
+    <td class="status-cell"></td>
+    <td>${item.status === "converted" ? "" : '<button type="button" class="save-btn" disabled>更正</button>'}</td>
+  `;
+  const cell = tr.querySelector(".status-cell");
+  cell.innerHTML = buildStatusCell(item.status, true);
+  if (item.status !== "converted") {
+    const select = tr.querySelector(".status-select");
+    select.value = item.status;
+    select.dataset.original = item.status;
+    if (item.status === "resolved") tr.querySelector(".delayed-reason-input").value = item.delayed_reason;
+    if (item.status === "closed") tr.querySelector(".closed-reason-input").value = item.closed_reason;
+    syncReasonBoxes(tr);
+  }
+  return tr;
+}
+
+function loadProcessedList() {
+  const params = new URLSearchParams();
+  const ym = document.getElementById("filter-year-month").value;
+  const op = document.getElementById("filter-pending-op").value;
+  const days = document.getElementById("filter-pending-days").value;
+  const status = document.getElementById("filter-status").value;
+  if (ym) params.set("year_month", ym);
+  if (op && days) { params.set("pending_op", op); params.set("pending_days", days); }
+  if (status) params.set("status", status);
+
+  fetch(`${processedApiUrl}?${params.toString()}`)
+    .then((res) => res.json())
+    .then((data) => {
+      processedTbody.innerHTML = "";
+      if (!data.items.length) {
+        processedTbody.innerHTML = '<tr class="empty-row"><td colspan="6">沒有符合條件的資料</td></tr>';
+        return;
+      }
+      data.items.forEach((item) => processedTbody.appendChild(renderProcessedRow(item)));
+    })
+    .catch(() => alert("網路錯誤，載入失敗"));
+}
+
+document.getElementById("apply-filter-btn").addEventListener("click", loadProcessedList);
+
+// ---------- 開關本體 ----------
+document.getElementById("view-toggle").addEventListener("change", function () {
+  const showProcessed = this.checked;
+  document.getElementById("open-view").hidden = showProcessed;
+  document.getElementById("processed-view").hidden = !showProcessed;
+  document.getElementById("view-label").textContent = "目前顯示：" + (showProcessed ? "已處理" : "未完成");
+  if (showProcessed) loadProcessedList();
 });
 </script>
 {% endblock %}
