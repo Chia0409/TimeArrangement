@@ -11,7 +11,6 @@
   <span id="view-label">目前顯示：未完成</span>
 </p>
 
-<!-- ========== 未完成清單 ========== -->
 <div id="open-view">
   <table>
     <thead><tr><th>任務名稱</th><th>建置日</th><th>懸掛天數</th><th>狀態</th><th>操作</th></tr></thead>
@@ -19,8 +18,8 @@
       {% for n in items %}
       <tr data-notfinished-id="{{ n.notfinished_mission_id }}">
         <td>{{ n.mission_name }}</td>
-        <td>{{ n.start_date.strftime('%Y/%m/%d') }}</td>
-        <td>{{ n.pending_days }} 天</td>
+        <td class="start-date">{{ n.start_date.strftime('%Y/%m/%d') }}</td>
+        <td class="pending-days">{{ n.pending_days }} 天</td>
         <td class="status-cell"></td>
         <td><button type="button" class="save-btn" disabled>儲存</button></td>
       </tr>
@@ -31,7 +30,6 @@
   </table>
 </div>
 
-<!-- ========== 已處理清單(含篩選器) ========== -->
 <div id="processed-view" hidden>
   <div class="filter-bar" style="border:1px solid #ddd; border-radius:6px; padding:10px; margin-bottom:12px;">
     <label>建置年/月：<input type="month" id="filter-year-month"></label>
@@ -73,7 +71,7 @@ const reopenUrlBase   = "{{ url_for('notfinished.reopen_mission', notfinished_mi
 const convertNewBase  = "{{ url_for('notfinished.convert_new', notfinished_mission_id=0) }}".replace("/0/convert-new", "");
 const convertExistBase= "{{ url_for('notfinished.convert_existing', notfinished_mission_id=0) }}".replace("/0/convert-existing", "");
 const processedApiUrl = "{{ url_for('notfinished.processed_list_api') }}";
-const projectsUrl     = "{{ url_for('summary.list_projects') }}";  // 沿用任務總結頁同一支API
+const projectsUrl     = "{{ url_for('summary.list_projects') }}";
 
 let projectCache = null;
 function loadProjects() {
@@ -81,7 +79,24 @@ function loadProjects() {
   return fetch(projectsUrl).then((res) => res.json()).then((data) => { projectCache = data.projects; return projectCache; });
 }
 
-// ---------- 組出「狀態欄」的HTML：下拉選單 + 三種理由/專案輸入框 ----------
+function flashDone(btn, text) {
+  const original = btn.textContent;
+  btn.textContent = text;
+  btn.disabled = true;
+  setTimeout(() => { btn.textContent = original; }, 1000);
+}
+
+function todayStr() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())}`;
+}
+
+function daysBetween(startStr, endStr) {
+  const toDate = (s) => { const [y, m, d] = s.split("/").map(Number); return new Date(y, m - 1, d); };
+  return Math.round((toDate(endStr) - toDate(startStr)) / 86400000);
+}
+
 function buildStatusCell(currentStatus, allowReopen) {
   if (currentStatus === "converted") {
     return `<span>已轉為長期任務（不可再變更）</span>`;
@@ -122,77 +137,110 @@ function syncReasonBoxes(row) {
   }
 }
 
-// ---------- 存檔：依目前選到的狀態決定打哪支API ----------
-function saveRow(row) {
+function submitStatusChange(row) {
   const id = row.dataset.notfinishedId;
   const status = row.querySelector(".status-select").value;
-  let url, body;
+  let url, body, reasonValue = "";
 
   if (status === "open") {
     url = `${reopenUrlBase}/${id}/reopen`; body = new URLSearchParams();
   } else if (status === "resolved") {
-    url = `${resolveUrlBase}/${id}/resolve`;
-    body = new URLSearchParams({ delayed_reason: row.querySelector(".delayed-reason-input").value.trim() });
+    reasonValue = row.querySelector(".delayed-reason-input").value.trim();
+    url = `${resolveUrlBase}/${id}/resolve`; body = new URLSearchParams({ delayed_reason: reasonValue });
   } else if (status === "closed") {
-    url = `${closeUrlBase}/${id}/close`;
-    body = new URLSearchParams({ closed_reason: row.querySelector(".closed-reason-input").value.trim() });
+    reasonValue = row.querySelector(".closed-reason-input").value.trim();
+    url = `${closeUrlBase}/${id}/close`; body = new URLSearchParams({ closed_reason: reasonValue });
   } else if (status === "convert_new") {
     const name = row.querySelector(".project-name-input").value.trim();
-    if (!name) { alert("長期任務名稱不能空白"); return; }
+    if (!name) { alert("長期任務名稱不能空白"); return Promise.resolve(null); }
     url = `${convertNewBase}/${id}/convert-new`; body = new URLSearchParams({ project_name: name });
   } else if (status === "convert_existing") {
     const pid = row.querySelector(".project-select").value;
-    if (!pid) { alert("請選擇一個長期任務"); return; }
+    if (!pid) { alert("請選擇一個長期任務"); return Promise.resolve(null); }
     url = `${convertExistBase}/${id}/convert-existing`; body = new URLSearchParams({ project_id: pid });
   } else {
-    return;
+    return Promise.resolve(null);
   }
 
-  fetch(url, { method: "POST", body })
+  return fetch(url, { method: "POST", body })
     .then((res) => res.json())
-    .then((data) => {
-      if (!data.success) { alert(data.message || "操作失敗"); return; }
-      row.remove();
-    })
-    .catch(() => alert("網路錯誤，操作失敗"));
+    .then((data) => ({ ...data, status, reasonValue }));
 }
 
-function bindTable(tbody) {
-  tbody.addEventListener("change", (e) => {
-    if (e.target.classList.contains("status-select")) syncReasonBoxes(e.target.closest("tr"));
-  });
-  tbody.addEventListener("click", (e) => {
-    if (e.target.classList.contains("save-btn")) saveRow(e.target.closest("tr"));
-  });
-}
-
-// ---------- 未完成表：頁面載入時就補上狀態欄(這批資料狀態固定是open，不用等AJAX) ----------
+// ---------- 未完成表：存檔成功就整列移除(離開了「未完成」範圍) ----------
 const openTbody = document.getElementById("open-tbody");
-bindTable(openTbody);
+openTbody.addEventListener("change", (e) => {
+  if (e.target.classList.contains("status-select")) syncReasonBoxes(e.target.closest("tr"));
+});
+openTbody.addEventListener("click", (e) => {
+  if (!e.target.classList.contains("save-btn")) return;
+  const row = e.target.closest("tr");
+  submitStatusChange(row).then((data) => {
+    if (!data) return;
+    if (!data.success) { alert(data.message || "操作失敗"); return; }
+    row.remove();
+  }).catch(() => alert("網路錯誤，操作失敗"));
+});
 openTbody.querySelectorAll("tr[data-notfinished-id]").forEach((row) => {
-  const cell = row.querySelector(".status-cell");
-  cell.innerHTML = buildStatusCell("open", false);
+  row.querySelector(".status-cell").innerHTML = buildStatusCell("open", false);
   row.querySelector(".status-select").dataset.original = "open";
   syncReasonBoxes(row);
 });
 
-// ---------- 已處理表：切換開關才載入(AJAX) ----------
+// ---------- 已處理表：除了「復原」要離開清單，其餘原地更新+flash ----------
 const processedTbody = document.getElementById("processed-tbody");
-bindTable(processedTbody);
+processedTbody.addEventListener("change", (e) => {
+  if (e.target.classList.contains("status-select")) syncReasonBoxes(e.target.closest("tr"));
+});
+processedTbody.addEventListener("click", (e) => {
+  if (!e.target.classList.contains("save-btn")) return;
+  const row = e.target.closest("tr");
+  const btn = e.target;
+
+  submitStatusChange(row).then((data) => {
+    if (!data) return;
+    if (!data.success) { alert(data.message || "操作失敗"); return; }
+
+    if (data.status === "open") {
+      row.remove();
+      return;
+    }
+    if (data.status === "convert_new" || data.status === "convert_existing") {
+      row.querySelector(".status-cell").innerHTML = buildStatusCell("converted", true);
+      row.cells[row.cells.length - 1].innerHTML = "";  // 鎖定狀態，不再需要操作欄
+      return;
+    }
+
+    // resolved / closed：原地更新顯示，不整列移除
+    const startStr = row.querySelector(".start-date").textContent;
+    const today = todayStr();
+    row.querySelector(".finish-date").textContent = today;
+    row.querySelector(".pending-days").textContent = daysBetween(startStr, today) + " 天";
+
+    row.querySelector(".status-cell").innerHTML = buildStatusCell(data.status, true);
+    const select = row.querySelector(".status-select");
+    select.value = data.status;
+    select.dataset.original = data.status;
+    if (data.status === "resolved") row.querySelector(".delayed-reason-input").value = data.reasonValue;
+    if (data.status === "closed") row.querySelector(".closed-reason-input").value = data.reasonValue;
+    syncReasonBoxes(row);
+
+    flashDone(btn, "已更新 ✓");
+  }).catch(() => alert("網路錯誤，操作失敗"));
+});
 
 function renderProcessedRow(item) {
   const tr = document.createElement("tr");
   tr.dataset.notfinishedId = item.notfinished_mission_id;
   tr.innerHTML = `
     <td>${item.mission_name}</td>
-    <td>${item.start_date}</td>
-    <td>${item.finish_date}</td>
-    <td>${item.pending_days} 天</td>
+    <td class="start-date">${item.start_date}</td>
+    <td class="finish-date">${item.finish_date}</td>
+    <td class="pending-days">${item.pending_days} 天</td>
     <td class="status-cell"></td>
-    <td>${item.status === "converted" ? "" : '<button type="button" class="save-btn" disabled>更正</button>'}</td>
+    <td>${item.status === "converted" ? "" : '<button type="button" class="save-btn" disabled>儲存</button>'}</td>
   `;
-  const cell = tr.querySelector(".status-cell");
-  cell.innerHTML = buildStatusCell(item.status, true);
+  tr.querySelector(".status-cell").innerHTML = buildStatusCell(item.status, true);
   if (item.status !== "converted") {
     const select = tr.querySelector(".status-select");
     select.value = item.status;
@@ -229,7 +277,6 @@ function loadProcessedList() {
 
 document.getElementById("apply-filter-btn").addEventListener("click", loadProcessedList);
 
-// ---------- 開關本體 ----------
 document.getElementById("view-toggle").addEventListener("change", function () {
   const showProcessed = this.checked;
   document.getElementById("open-view").hidden = showProcessed;

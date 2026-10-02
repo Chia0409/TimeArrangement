@@ -3,6 +3,7 @@ from app.repositories.project_repo import name_taken, create_project, get_projec
 
 
 def get_open_notfinished_list(user_id):
+    """懸掛天數=0代表start_date就是今天，先天上不算「懸掛」，不顯示。"""
     db = get_db()
     with db.cursor() as cur:
         cur.execute(
@@ -10,7 +11,7 @@ def get_open_notfinished_list(user_id):
                       DATEDIFF(CURDATE(), nm.start_date) AS pending_days
                FROM notfinished_mission nm
                JOIN daily_mission dm ON dm.mission_id = nm.mission_id
-               WHERE nm.user_id = %s AND nm.status = 'open'
+               WHERE nm.user_id = %s AND nm.status = 'open' AND nm.start_date < CURDATE()
                ORDER BY nm.start_date""",
             (user_id,),
         )
@@ -18,9 +19,6 @@ def get_open_notfinished_list(user_id):
 
 
 def get_processed_notfinished_list(user_id, year_month=None, pending_op=None, pending_days=None, status=None):
-    """已處理(resolved/closed/converted)清單，支援三種篩選。
-    用「子查詢」把pending_days先算出來，外層才能直接拿它當篩選條件——
-    MySQL不允許在同一層WHERE直接用SELECT裡現算出來的別名，要嘛包一層、要嘛整段公式重複貼兩次，包一層比較好維護。"""
     sql = """
         SELECT * FROM (
             SELECT nm.notfinished_mission_id, nm.mission_id, nm.status, nm.start_date, nm.finish_date,
@@ -35,10 +33,10 @@ def get_processed_notfinished_list(user_id, year_month=None, pending_op=None, pe
     params = [user_id]
 
     if year_month:
-        sql += " AND DATE_FORMAT(start_date, '%%Y-%%m') = %s"  # %%是因為%s佔位符跟DATE_FORMAT的%衝突，要跳脫
+        sql += " AND DATE_FORMAT(start_date, '%%Y-%%m') = %s"
         params.append(year_month)
     if pending_op in (">", "=", "<") and pending_days is not None:
-        sql += f" AND pending_days {pending_op} %s"  # 運算子不能用%s帶(那是給「值」用的)，只能白名單檢查後直接接進SQL字串
+        sql += f" AND pending_days {pending_op} %s"
         params.append(pending_days)
     if status in ("resolved", "closed", "converted"):
         sql += " AND status = %s"
@@ -50,6 +48,41 @@ def get_processed_notfinished_list(user_id, year_month=None, pending_op=None, pe
     with db.cursor() as cur:
         cur.execute(sql, params)
         return cur.fetchall()
+
+
+def track_mission_status(user_id, mission_id, mission_date, is_finished):
+    """依這次回報的完成狀態，同步notfinished_mission的追蹤紀錄：
+       is_finished=0 且這筆任務還沒建立過追蹤紀錄 → 新增一筆，並把id串回daily_mission
+       is_finished=1 且這筆任務曾經被追蹤過        → 把那筆追蹤紀錄標記為resolved
+       兩種情況都用SQL的條件式一次處理，不用先查再判斷，減少來回資料庫的次數。"""
+    db = get_db()
+    with db.cursor() as cur:
+        if is_finished == 0:
+            cur.execute(
+                """INSERT INTO notfinished_mission (user_id, mission_id, status, start_date)
+                   SELECT %s, %s, 'open', %s
+                   WHERE NOT EXISTS (
+                       SELECT 1 FROM daily_mission
+                       WHERE mission_id = %s AND notfinished_mission_id IS NOT NULL
+                   )""",
+                (user_id, mission_id, mission_date, mission_id),
+            )
+            cur.execute(
+                """UPDATE daily_mission dm
+                   JOIN notfinished_mission nm ON nm.mission_id = dm.mission_id
+                   SET dm.notfinished_mission_id = nm.notfinished_mission_id
+                   WHERE dm.mission_id = %s AND dm.notfinished_mission_id IS NULL""",
+                (mission_id,),
+            )
+        elif is_finished == 1:
+            cur.execute(
+                """UPDATE notfinished_mission nm
+                   JOIN daily_mission dm ON dm.notfinished_mission_id = nm.notfinished_mission_id
+                   SET nm.status = 'resolved', nm.finish_date = CURDATE()
+                   WHERE dm.mission_id = %s AND dm.user_id = %s""",
+                (mission_id, user_id),
+            )
+    db.commit()
 
 
 def set_status_resolved(user_id, notfinished_mission_id, delayed_reason):
@@ -87,7 +120,6 @@ def set_status_closed(user_id, notfinished_mission_id, closed_reason):
 
 
 def reopen_notfinished(user_id, notfinished_mission_id):
-    """從resolved/closed復原成open，daily_mission的is_finished也一併改回0(代表「還在追蹤中」)。"""
     db = get_db()
     with db.cursor() as cur:
         cur.execute(
@@ -155,37 +187,4 @@ def convert_to_existing_project(user_id, notfinished_mission_id, project_id, tod
 
     _apply_conversion(db, user_id, row["mission_id"], notfinished_mission_id, project_id, today)
     return project_id, None
-
-def track_mission_status(user_id, mission_id, mission_date, is_finished):
-    """依這次回報的完成狀態，同步notfinished_mission的追蹤紀錄：
-       is_finished=0 且這筆任務還沒建立過追蹤紀錄 → 新增一筆，並把id串回daily_mission
-       is_finished=1 且這筆任務曾經被追蹤過        → 把那筆追蹤紀錄標記為resolved
-       兩種情況都用SQL的條件式一次處理，不用先查再判斷，減少來回資料庫的次數。"""
-    db = get_db()
-    with db.cursor() as cur:
-        if is_finished == 0:
-            cur.execute(
-                """INSERT INTO notfinished_mission (user_id, mission_id, status, start_date)
-                   SELECT %s, %s, 'open', %s
-                   WHERE NOT EXISTS (
-                       SELECT 1 FROM daily_mission
-                       WHERE mission_id = %s AND notfinished_mission_id IS NOT NULL
-                   )""",
-                (user_id, mission_id, mission_date, mission_id),
-            )
-            cur.execute(
-                """UPDATE daily_mission dm
-                   JOIN notfinished_mission nm ON nm.mission_id = dm.mission_id
-                   SET dm.notfinished_mission_id = nm.notfinished_mission_id
-                   WHERE dm.mission_id = %s AND dm.notfinished_mission_id IS NULL""",
-                (mission_id,),
-            )
-        elif is_finished == 1:
-            cur.execute(
-                """UPDATE notfinished_mission nm
-                   JOIN daily_mission dm ON dm.notfinished_mission_id = nm.notfinished_mission_id
-                   SET nm.status = 'resolved', nm.finish_date = CURDATE()
-                   WHERE dm.mission_id = %s AND dm.user_id = %s""",
-                (mission_id, user_id),
-            )
     db.commit()
