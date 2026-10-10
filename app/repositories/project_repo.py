@@ -131,3 +131,20 @@ def delete_project(user_id, project_id):
     with db.cursor() as cur:
         cur.execute("DELETE FROM project WHERE project_id = %s AND user_id = %s", (project_id, user_id))
     db.commit()
+
+def get_project_missions(user_id, project_id):
+    """撈這個長期任務底下所有daily_mission，LEFT JOIN notfinished_mission
+    是為了拿到更細緻的狀態(open/resolved/closed)，而不是只看daily_mission自己的is_finished。"""
+    db = get_db()
+    with db.cursor() as cur:
+        cur.execute(
+            """SELECT dm.mission_id, dm.mission_name, dm.mission_date, dm.start_time, dm.end_time,
+                      dm.actual_hours, dm.is_finished, dm.is_auto_closed,
+                      dm.notfinished_mission_id, nm.status AS tracking_status
+               FROM daily_mission dm
+               LEFT JOIN notfinished_mission nm ON nm.notfinished_mission_id = dm.notfinished_mission_id
+               WHERE dm.project_id = %s AND dm.user_id = %s
+               ORDER BY dm.mission_date DESC, dm.mission_no, dm.segment_no""",
+            (project_id, user_id),
+        )
+        return cur.fetchall()

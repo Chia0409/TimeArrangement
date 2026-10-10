@@ -188,3 +188,57 @@ def convert_to_existing_project(user_id, notfinished_mission_id, project_id, tod
     _apply_conversion(db, user_id, row["mission_id"], notfinished_mission_id, project_id, today)
     return project_id, None
     db.commit()
+
+def report_overdue_mission(user_id, mission_id, final_status, reason):
+    """給「尚未回報」的過期任務用：這類任務還沒有notfinished_mission紀錄，
+    這裡直接幫它補一筆、狀態直接存成resolved或closed(不經過open)，
+    並把daily_mission標記is_auto_closed=1，代表「這是之後才回頭補處理的過期任務」。"""
+    db = get_db()
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT is_finished, mission_date FROM daily_mission WHERE mission_id=%s AND user_id=%s",
+            (mission_id, user_id),
+        )
+        row = cur.fetchone()
+        if row is None:
+            return False, "找不到這筆任務"
+        if row["is_finished"] is not None:
+            return False, "這筆任務已經回報過了"
+
+        is_finished = 1 if final_status == "resolved" else 0
+        cur.execute(
+            "UPDATE daily_mission SET is_finished=%s, is_auto_closed=1 WHERE mission_id=%s AND user_id=%s",
+            (is_finished, mission_id, user_id),
+        )
+
+        delayed_reason = reason if final_status == "resolved" else None
+        closed_reason = reason if final_status == "closed" else None
+        cur.execute(
+            """INSERT INTO notfinished_mission (user_id, mission_id, status, start_date, finish_date, delayed_reason, closed_reason)
+               VALUES (%s, %s, %s, %s, CURDATE(), %s, %s)""",
+            (user_id, mission_id, final_status, row["mission_date"], delayed_reason, closed_reason),
+        )
+        new_id = cur.lastrowid
+        cur.execute(
+            "UPDATE daily_mission SET notfinished_mission_id=%s WHERE mission_id=%s AND user_id=%s",
+            (new_id, mission_id, user_id),
+        )
+    db.commit()
+    return True, None
+
+def set_status_resolved(user_id, notfinished_mission_id, delayed_reason):
+    db = get_db()
+    with db.cursor() as cur:
+        cur.execute(
+            """UPDATE notfinished_mission SET status='resolved', finish_date=CURDATE(), delayed_reason=%s
+               WHERE notfinished_mission_id=%s AND user_id=%s AND status IN ('open','closed')""",
+            (delayed_reason, notfinished_mission_id, user_id),
+        )
+        if cur.rowcount:
+            cur.execute(
+                """UPDATE daily_mission dm JOIN notfinished_mission nm ON nm.mission_id = dm.mission_id
+                   SET dm.is_finished = 1, dm.is_auto_closed = 0
+                   WHERE nm.notfinished_mission_id=%s AND dm.user_id=%s""",
+                (notfinished_mission_id, user_id),
+            )
+    db.commit()
