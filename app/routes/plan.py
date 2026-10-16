@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, date
 from flask import Blueprint, render_template, request, session, jsonify
 
 from app.services.date_service import get_day_status
@@ -8,9 +8,24 @@ from app.repositories.mission_repo import (
 )
 from app.services.auth_service import login_required
 
+from app.repositories.unfinished_repo import get_open_unfinished_missions, import_continue, import_resolve
+from app.services.date_service import get_day_status, calc_actual_hours
+
 plan_bp = Blueprint("plan", __name__)
 
 
+# @plan_bp.route("/plan/<date_str>")
+# @login_required
+# def plan(date_str):
+#     user_id = session["user_id"]
+#     mission_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+#     status = get_day_status(mission_date)
+
+#     missions = get_created_missions(user_id, mission_date)
+#     editable = status in ("today", "future")
+
+#     return render_template("plan.html", mission_date=mission_date, status=status,
+#                             missions=missions, editable=editable)
 @plan_bp.route("/plan/<date_str>")
 @login_required
 def plan(date_str):
@@ -20,10 +35,11 @@ def plan(date_str):
 
     missions = get_created_missions(user_id, mission_date)
     editable = status in ("today", "future")
+    # 匯入只在「今天」才有意義，過去/未來的計畫頁不顯示這塊
+    open_unfinished = get_open_unfinished_missions(user_id) if status == "today" else []
 
     return render_template("plan.html", mission_date=mission_date, status=status,
-                            missions=missions, editable=editable)
-
+                            missions=missions, editable=editable, open_unfinished=open_unfinished)
 
 @plan_bp.route("/plan/<date_str>/mission/add", methods=["POST"])
 @login_required
@@ -81,3 +97,31 @@ def delete_mission_ajax(date_str, mission_id):
     if not delete_mission(user_id, mission_id):
         return jsonify(success=False, message="這筆任務目前不能刪除"), 400
     return jsonify(success=True)
+
+@plan_bp.route("/plan/<date_str>/mission/<int:mission_id>/import", methods=["POST"])
+@login_required
+def import_mission_ajax(date_str, mission_id):
+    user_id = session["user_id"]
+    mission_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+    if get_day_status(mission_date) != "today":
+        return jsonify(success=False, message="只有今天能匯入未完成任務"), 403
+
+    outcome = request.form.get("outcome")
+    start_time = request.form.get("start_time") or None
+    end_time = request.form.get("end_time") or None
+    actual_hours = calc_actual_hours(start_time, end_time) if start_time and end_time else None
+    today = date.today()
+
+    if outcome == "continue":
+        if not import_continue(user_id, mission_id, today, start_time, end_time, actual_hours):
+            return jsonify(success=False, message="找不到這筆未完成任務"), 400
+        return jsonify(success=True)
+
+    if outcome == "resolved":
+        delay_reason = request.form.get("delay_reason", "").strip()
+        ok, error = import_resolve(user_id, mission_id, today, start_time, end_time, actual_hours, delay_reason)
+        if not ok:
+            return jsonify(success=False, message=error), 400
+        return jsonify(success=True)
+
+    return jsonify(success=False, message="狀態錯誤"), 400

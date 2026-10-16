@@ -2,10 +2,16 @@ from datetime import datetime, date
 from flask import Blueprint, render_template, request, session, jsonify
 
 from app.services.date_service import get_day_status, calc_actual_hours
+# from app.repositories.mission_repo import (
+#     get_missions_by_date, get_next_mission_no, insert_mission,
+#     report_mission_result, close_overdue_missions,
+# )
 from app.repositories.mission_repo import (
     get_missions_by_date, get_next_mission_no, insert_mission,
-    report_mission_result, close_overdue_missions,
+    report_mission_result, mark_overdue_as_unfinished,
 )
+from app.repositories.unfinished_repo import create_chains_for_newly_unfinished
+
 from app.services.auth_service import login_required
 
 summary_bp = Blueprint("summary", __name__)
@@ -33,7 +39,9 @@ def summary(date_str):
         return render_template("summary.html", mission_date=mission_date, status=status,
                                pending=[], finished=[], can_edit=False)
 
-    close_overdue_missions(user_id, today)
+    # close_overdue_missions(user_id, today)
+    mark_overdue_as_unfinished(user_id, today)
+    create_chains_for_newly_unfinished(user_id)
 
     all_missions = get_missions_by_date(user_id, mission_date)
     pending = [m for m in all_missions if m["status"] == "default"]

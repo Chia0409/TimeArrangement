@@ -126,16 +126,44 @@ def report_mission_result(user_id, mission_id, is_finished, start_time, end_time
     return cur.rowcount
 
 
-def close_overdue_missions(user_id, today):
-    """過期還沒回報(status還是'default')的任務 → 標成unfinished+系統代標。
-    這批先只做daily_mission這邊的狀態轉換，『同時幫它在unfinished_mission建一筆追蹤紀錄』
-    這段(對應舊版的notfinished_mission寫入)留到下一批，因為那是unfinished_repo的責任範圍。"""
+# def close_overdue_missions(user_id, today):
+#     """過期還沒回報(status還是'default')的任務 → 標成unfinished+系統代標。
+#     這批先只做daily_mission這邊的狀態轉換，『同時幫它在unfinished_mission建一筆追蹤紀錄』
+#     這段(對應舊版的notfinished_mission寫入)留到下一批，因為那是unfinished_repo的責任範圍。"""
+#     db = get_db()
+#     with db.cursor() as cur:
+#         cur.execute(
+#             """UPDATE daily_mission SET status='unfinished', is_auto_closed=1
+#                WHERE user_id=%s AND mission_start_date < %s AND is_added=0 AND status='default'""",
+#             (user_id, today),
+#         )
+#     db.commit()
+
+def mark_overdue_as_unfinished(user_id, today):
+    """過期還沒回報的任務 → daily_mission自己的狀態轉換。
+    只處理這張表自己的事，『要不要連動建立unfinished_mission』交給unfinished_repo，
+    每張表的repo只碰自己對應的那張表，分工維持單純。"""
     db = get_db()
     with db.cursor() as cur:
         cur.execute(
             """UPDATE daily_mission SET status='unfinished', is_auto_closed=1
                WHERE user_id=%s AND mission_start_date < %s AND is_added=0 AND status='default'""",
             (user_id, today),
+        )
+    db.commit()
+
+
+def finish_mission_from_unfinished(user_id, mission_id, start_time, end_time, actual_hours):
+    """未完成任務透過匯入變『完成』時，回頭更新daily_mission——
+    is_ONTime_finished固定寫0，因為會呼叫到這支，前提就是它曾經是unfinished過，不可能準時。"""
+    db = get_db()
+    with db.cursor() as cur:
+        cur.execute(
+            """UPDATE daily_mission
+               SET status='finished', mission_finish_date=CURDATE(),
+                   is_ONTime_finished=0, start_time=%s, end_time=%s, actual_hours=%s
+               WHERE mission_id=%s AND user_id=%s""",
+            (start_time, end_time, actual_hours, mission_id, user_id),
         )
     db.commit()
 

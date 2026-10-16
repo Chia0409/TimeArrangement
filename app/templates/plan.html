@@ -3,6 +3,31 @@
 <h1>{{ mission_date.strftime('%Y/%m/%d') }} 預計執行任務</h1>
 <p><a href="{{ url_for('home.index') }}">← 回首頁</a></p>
 <p><a href="{{ url_for('home.calendar_view') }}">查看月曆</a></p>
+{% if status == 'today' and open_unfinished %}
+<h2>未完成任務（可匯入處理）</h2>
+<table>
+  <thead><tr><th>任務名稱</th><th>原訂日期</th><th>處理方式</th><th>開始</th><th>結束</th><th>操作</th></tr></thead>
+  <tbody id="import-tbody">
+    {% for u in open_unfinished %}
+    <tr data-mission-id="{{ u.mission_id }}">
+      <td>{{ u.mission_name }}</td>
+      <td>{{ u.update_date.strftime('%Y/%m/%d') }}</td>
+      <td>
+        <select class="outcome-select">
+          <option value="continue" selected>依然未完成</option>
+          <option value="resolved">已完成</option>
+        </select>
+        <div class="reason-box" hidden><input type="text" class="delay-reason-input" placeholder="延遲原因(必填)"></div>
+      </td>
+      <td><input type="time" class="start-input"></td>
+      <td><input type="time" class="end-input"></td>
+      <td><button type="button" class="import-btn">送出</button></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
 <h2>任務安排</h2>
 
 {% if editable %}
@@ -33,6 +58,39 @@
 const addUrl        = "{{ url_for('plan.add_mission_ajax', date_str=mission_date.isoformat()) }}";
 const updateUrlBase = "{{ url_for('plan.update_mission_ajax', date_str=mission_date.isoformat(), mission_id=0) }}".replace("/0/update", "");
 const deleteUrlBase = "{{ url_for('plan.delete_mission_ajax', date_str=mission_date.isoformat(), mission_id=0) }}".replace("/0/delete", "");
+const importUrlBase = "{{ url_for('plan.import_mission_ajax', date_str=mission_date.isoformat(), mission_id=0) }}".replace(/\/0$/, "");
+
+document.getElementById("import-tbody")?.addEventListener("change", function (e) {
+  if (!e.target.classList.contains("outcome-select")) return;
+  const row = e.target.closest("tr");
+  row.querySelector(".reason-box").hidden = e.target.value !== "resolved";
+});
+
+document.getElementById("import-tbody")?.addEventListener("click", function (e) {
+  if (!e.target.classList.contains("import-btn")) return;
+  const row = e.target.closest("tr");
+  const missionId = row.dataset.missionId;
+  const outcome = row.querySelector(".outcome-select").value;
+
+  const body = new URLSearchParams({
+    outcome,
+    start_time: row.querySelector(".start-input").value,
+    end_time: row.querySelector(".end-input").value,
+  });
+  if (outcome === "resolved") {
+    const reason = row.querySelector(".delay-reason-input").value.trim();
+    if (!reason) { alert("請填寫延遲原因"); return; }
+    body.set("delay_reason", reason);
+  }
+
+  fetch(`${importUrlBase}/${missionId}`, { method: "POST", body })
+    .then((res) => res.json())
+    .then((data) => {
+      if (!data.success) { alert(data.message || "操作失敗"); return; }
+      location.reload();
+    })
+    .catch(() => alert("網路錯誤，操作失敗"));
+});
 
 function flashSaved(btn) {
   const original = btn.textContent;
