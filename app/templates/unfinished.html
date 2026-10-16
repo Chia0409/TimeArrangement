@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>未完成任務管理</h1>
+<p><a href="{{ url_for('home.index') }}">← 回首頁</a></p>
+<p><em>「依然未完成」或「已完成」請到當天的「預計執行任務」頁面匯入處理；這裡只能強制結束，且一旦結束不可復原。</em></p>
+
+<table>
+  <thead><tr><th>任務名稱</th><th>原訂日期</th><th>懸掛天數</th><th>結束原因</th><th>操作</th></tr></thead>
+  <tbody id="unfinished-tbody">
+    {% for u in items %}
+    <tr data-mission-id="{{ u.mission_id }}">
+      <td>{{ u.mission_name }}</td>
+      <td>{{ u.update_date.strftime('%Y/%m/%d') }}</td>
+      <td>{{ u.pending_days }} 天</td>
+      <td><input type="text" class="closed-reason-input" placeholder="結束原因(必填)"></td>
+      <td><button type="button" class="close-btn">強制結束</button></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5">目前沒有懸掛中的未完成任務</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<script>
+const closeUrlBase = "{{ url_for('unfinished.close_mission', mission_id=0) }}".replace(/\/0\/close$/, "");
+
+document.getElementById("unfinished-tbody").addEventListener("click", function (e) {
+  if (!e.target.classList.contains("close-btn")) return;
+  const row = e.target.closest("tr");
+  const missionId = row.dataset.missionId;
+  const reason = row.querySelector(".closed-reason-input").value.trim();
+  if (!reason) { alert("請填寫結束原因"); return; }
+  if (!confirm("強制結束後不可復原，確定要結束這筆任務嗎？")) return;
+
+  fetch(`${closeUrlBase}/${missionId}/close`, { method: "POST", body: new URLSearchParams({ closed_reason: reason }) })
+    .then((res) => res.json())
+    .then((data) => {
+      if (!data.success) { alert(data.message || "操作失敗"); return; }
+      row.remove();
+    })
+    .catch(() => alert("網路錯誤，操作失敗"));
+});
+</script>
+{% endblock %}

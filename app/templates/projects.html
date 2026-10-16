@@ -1,302 +1,136 @@
 {% extends "base.html" %}
 {% block content %}
-<style>
-tr[data-finished="1"] td, tr[data-finished="1"] .name-input { color: #999; }
-.detail-table th, .detail-table td { font-size: 0.9em; }
-</style>
-
 <h1>長期任務管理</h1>
 <p><a href="{{ url_for('home.index') }}">← 回首頁</a></p>
 
+<h2>新增專案</h2>
+<form id="create-form">
+  <label>專案名稱：<input type="text" id="new-project-name" required></label>
+  <label>類別：<input type="text" id="new-project-category" placeholder="工作用/生活精進/旅遊..."></label>
+  <label>開始日期：<input type="date" id="new-project-start"></label>
+  <table id="stage-table">
+    <thead><tr><th>階段名稱</th><th>預估天數</th></tr></thead>
+    <tbody id="stage-tbody">
+      <tr><td><input type="text" name="stage_name" placeholder="第一期"></td><td><input type="number" name="stage_estimate_days" min="1"></td></tr>
+    </tbody>
+  </table>
+  <button type="button" id="add-stage-row-btn">＋ 新增階段</button>
+  <button type="button" id="create-project-btn">建立專案</button>
+</form>
+
+<h2>專案清單</h2>
 <table>
-  <thead>
-    <tr><th></th><th>長期任務名稱</th><th>開始日</th><th>狀態</th><th>出現次數</th><th>累計時數</th>
-        <th>完成</th><th>沒做完</th><th>忘記回報</th><th>操作</th></tr>
-  </thead>
+  <thead><tr><th></th><th>專案名稱</th><th>類別</th><th>狀態</th><th>預估結案</th>
+      <th>任務數</th><th>累計時數</th><th>完成</th><th>未完成</th><th>忘記回報</th><th>操作</th></tr></thead>
   <tbody id="project-tbody">
     {% for p in projects %}
-    <tr data-project-id="{{ p.project_id }}" data-finished="{{ p.is_finished }}" class="project-row">
-      <td><button type="button" class="expand-btn">▶</button></td>
-      <td><input type="text" class="name-input" value="{{ p.project_name }}"></td>
-      <td class="start-date">{{ p.start_date.strftime('%Y/%m/%d') }}</td>
-      <td class="status-cell">{{ "已完成" if p.is_finished else "進行中" }}</td>
-      <td class="record-count">{{ p.record_count }}</td>
-      <td class="total-hours">{{ p.total_hours }}</td>
-      <td class="done-count">{{ p.done_count }}</td>
-      <td class="undone-count">{{ p.undone_count }}</td>
-      <td class="forgot-count">{{ p.forgot_count }}</td>
-      <td>
-        <button type="button" class="save-btn">儲存</button>
-        <button type="button" class="toggle-btn">{{ "重新開啟" if p.is_finished else "標記完成" }}</button>
-        <button type="button" class="delete-btn">刪除</button>
+    <tr data-project-id="{{ p.project_id }}">
+      <td><button type="button" class="expand-project-btn">▶</button></td>
+      <td>{{ p.project_name }}</td>
+      <td>{{ p.category or '-' }}</td>
+      <td class="project-status">{{ {'ongoing':'進行中','resolved':'已完成','stopped':'已關閉'}[p.status] }}</td>
+      <td>{{ p.estimated_finish_date.strftime('%Y/%m/%d') if p.estimated_finish_date else '-' }}</td>
+      <td>{{ p.mission_count }}</td>
+      <td>{{ p.total_hours }}</td>
+      <td>{{ p.finished_count }}</td>
+      <td>{{ p.unfinished_count }}</td>
+      <td>{{ p.forgot_count }}</td>
+      <td class="project-actions">
+        {% if p.status == 'ongoing' %}
+        <input type="text" class="project-reason-input" placeholder="理由(必填)">
+        <button type="button" class="resolve-project-btn">完成</button>
+        <button type="button" class="close-project-btn">關閉</button>
+        {% endif %}
       </td>
     </tr>
     {% else %}
-    <tr class="empty-row"><td colspan="10">還沒有長期任務，按下方按鈕新增一個吧</td></tr>
+    <tr><td colspan="11">還沒有任何專案</td></tr>
     {% endfor %}
   </tbody>
 </table>
-<br>
-<button type="button" id="add-project-btn">＋ 新增長期任務</button>
 
 <script>
-// ========== 以下跟母體相關的部分，完全沿用你附的舊版，一行沒改 ==========
-const rowUrlBase = "{{ url_for('project.update_project', project_id=0) }}".replace("/0/update", "");
-const addUrl = "{{ url_for('project.add_project') }}";
-const tbody = document.getElementById("project-tbody");
+const createUrl = "{{ url_for('project.create_project') }}";
+const projectRowUrlBase = "{{ url_for('project.resolve_project_ajax', project_id=0) }}".replace(/\/0\/resolve$/, "");
+const stageMissionsUrlBase = "{{ url_for('project.stage_missions_api', stage_id=0) }}".replace(/\/0\/missions$/, "");
+const assignUrlBase = "{{ url_for('project.assign_mission_ajax', stage_id=0) }}".replace(/\/0\/assign$/, "");
 
-function flashDone(btn, text) {
-  const original = btn.textContent;
-  btn.textContent = text;
-  btn.disabled = true;
-  setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 1000);
-}
+// ---------- 新增專案的動態階段列 ----------
+document.getElementById("add-stage-row-btn").addEventListener("click", function () {
+  const tr = document.createElement("tr");
+  tr.innerHTML = `<td><input type="text" name="stage_name"></td><td><input type="number" name="stage_estimate_days" min="1"></td>`;
+  document.getElementById("stage-tbody").appendChild(tr);
+});
 
-tbody.addEventListener("click", function (e) {
+document.getElementById("create-project-btn").addEventListener("click", function () {
+  const name = document.getElementById("new-project-name").value.trim();
+  const category = document.getElementById("new-project-category").value.trim();
+  const startDate = document.getElementById("new-project-start").value;
+  if (!name || !startDate) { alert("專案名稱與開始日期必填"); return; }
+
+  const body = new URLSearchParams({ project_name: name, category, start_date: startDate });
+  document.querySelectorAll('#stage-tbody input[name="stage_name"]').forEach((el) => body.append("stage_name", el.value.trim()));
+  document.querySelectorAll('#stage-tbody input[name="stage_estimate_days"]').forEach((el) => body.append("stage_estimate_days", el.value));
+
+  fetch(createUrl, { method: "POST", body })
+    .then((res) => res.json())
+    .then((data) => { if (!data.success) { alert(data.message || "建立失敗"); return; } location.reload(); })
+    .catch(() => alert("網路錯誤，建立失敗"));
+});
+
+// ---------- 專案完成/關閉 ----------
+document.getElementById("project-tbody").addEventListener("click", function (e) {
   const row = e.target.closest("tr");
-  if (!row || row.classList.contains("empty-row")) return;
-  const id = row.dataset.projectId;
-  const nameInput = row.querySelector(".name-input");
+  if (!row || !row.dataset.projectId) return;
+  const pid = row.dataset.projectId;
 
-  if (e.target.classList.contains("save-btn")) {
-    const name = nameInput.value.trim();
-    if (!name) { alert("長期任務名稱不能空白"); nameInput.focus(); return; }
+  if (e.target.classList.contains("resolve-project-btn") || e.target.classList.contains("close-project-btn")) {
+    const reason = row.querySelector(".project-reason-input").value.trim();
+    if (!reason) { alert("請填寫理由"); return; }
+    const isResolve = e.target.classList.contains("resolve-project-btn");
+    const url = isResolve ? `${projectRowUrlBase}/${pid}/resolve` : `${projectRowUrlBase}/${pid}/close`;
+    const field = isResolve ? "delay_reason" : "closed_reason";
 
-    const body = new URLSearchParams({ project_name: name });
-    const req = id
-      ? fetch(`${rowUrlBase}/${id}/update`, { method: "POST", body })
-      : fetch(addUrl, { method: "POST", body });
-
-    req.then((res) => res.json())
-      .then((data) => {
-        if (!data.success) { alert(data.message || "儲存失敗"); return; }
-        if (!id) {
-          row.dataset.projectId = data.project_id;
-          row.querySelector(".start-date").textContent = data.start_date;
-          row.querySelector(".status-cell").textContent = "進行中";
-          row.querySelector(".toggle-btn").hidden = false;
-          row.querySelector(".expand-btn").disabled = false;
-        }
-        flashDone(e.target, "已儲存 ✓");
-      })
-      .catch(() => alert("網路錯誤，儲存失敗"));
-    return;
-  }
-
-  if (e.target.classList.contains("toggle-btn")) {
-    const finish = row.dataset.finished === "1" ? "0" : "1";
-    fetch(`${rowUrlBase}/${id}/toggle`, { method: "POST", body: new URLSearchParams({ finish }) })
+    fetch(url, { method: "POST", body: new URLSearchParams({ [field]: reason }) })
       .then((res) => res.json())
-      .then((data) => {
-        if (!data.success) { alert(data.message || "操作失敗"); return; }
-        row.dataset.finished = String(data.is_finished);
-        row.querySelector(".status-cell").textContent = data.is_finished ? "已完成" : "進行中";
-        e.target.textContent = data.is_finished ? "重新開啟" : "標記完成";
-      })
+      .then((data) => { if (!data.success) { alert(data.message || "操作失敗"); return; } location.reload(); })
       .catch(() => alert("網路錯誤，操作失敗"));
     return;
   }
 
-  if (e.target.classList.contains("delete-btn")) {
-    if (!id) { row.remove(); return; }
-    if (!confirm("確定要刪除這個長期任務嗎？")) return;
-
-    fetch(`${rowUrlBase}/${id}/delete`, { method: "POST" })
-      .then((res) => res.json())
-      .then((data) => {
-        if (!data.success) { alert(data.message || "刪除失敗"); return; }
-        if (row.nextElementSibling?.classList.contains("detail-row")) row.nextElementSibling.remove();
-        row.remove();
-      })
-      .catch(() => alert("網路錯誤，刪除失敗"));
-  }
-});
-
-document.getElementById("add-project-btn").addEventListener("click", function () {
-  const empty = tbody.querySelector(".empty-row");
-  if (empty) empty.remove();
-
-  const tr = document.createElement("tr");
-  tr.classList.add("project-row");
-  tr.dataset.finished = "0";
-  tr.innerHTML = `
-    <td><button type="button" class="expand-btn" disabled>▶</button></td>
-    <td><input type="text" class="name-input" placeholder="長期任務名稱"></td>
-    <td class="start-date">—</td>
-    <td class="status-cell">尚未儲存</td>
-    <td class="record-count">0</td><td class="total-hours">0</td>
-    <td class="done-count">0</td><td class="undone-count">0</td><td class="forgot-count">0</td>
-    <td>
-      <button type="button" class="save-btn">儲存</button>
-      <button type="button" class="toggle-btn" hidden>標記完成</button>
-      <button type="button" class="delete-btn">刪除</button>
-    </td>`;
-  tbody.appendChild(tr);
-  tr.querySelector(".name-input").focus();
-});
-
-// ========== 以下是這次新增的「展開子體」功能 ==========
-const missionsUrlBase = "{{ url_for('project.project_missions_api', project_id=0) }}".replace("/0/missions", "");
-const resolveUrlBase  = "{{ url_for('notfinished.resolve_mission', notfinished_mission_id=0) }}".replace("/0/resolve", "");
-const closeUrlBase    = "{{ url_for('notfinished.close_mission', notfinished_mission_id=0) }}".replace("/0/close", "");
-const reportUrlBase   = "{{ url_for('project.report_mission', mission_id=0) }}".replace("/0/report", "");
-
-function buildChildStatusCell(item) {
-  if (item.adjust_mode === "open") {
-    return `
-      <select class="child-status-select">
-        <option value="open" selected>未完成</option>
-        <option value="resolved">已完成</option>
-        <option value="closed">強制結束</option>
-      </select>
-      <div class="reason-box" data-for="resolved" hidden><input type="text" class="delayed-reason-input" placeholder="延遲原因(可留空)"></div>
-      <div class="reason-box" data-for="closed" hidden><input type="text" class="closed-reason-input" placeholder="結束原因(可留空)"></div>`;
-  }
-  if (item.adjust_mode === "pending") {
-    return `
-      <select class="child-status-select">
-        <option value="" selected>尚未回報</option>
-        <option value="resolved">已回報（完成）</option>
-        <option value="closed">已回報（強制結束）</option>
-      </select>
-      <div class="reason-box" data-for="resolved" hidden><input type="text" class="delayed-reason-input" placeholder="延遲原因(可留空)"></div>
-      <div class="reason-box" data-for="closed" hidden><input type="text" class="closed-reason-input" placeholder="結束原因(可留空)"></div>`;
-  }
-  return item.status_label;  // 完成/強制結束：唯讀文字
-}
-
-function renderMissionRow(item) {
-  const tr = document.createElement("tr");
-  tr.dataset.missionId = item.mission_id;
-  tr.dataset.notfinishedId = item.notfinished_mission_id || "";
-  tr.dataset.adjustMode = item.adjust_mode || "";
-  tr.dataset.wasAutoClosed = item.is_auto_closed ? "1" : "0";
-  tr.innerHTML = `
-    <td>${item.mission_date}</td>
-    <td>${item.mission_name}</td>
-    <td>${item.start_time}</td>
-    <td>${item.end_time}</td>
-    <td>${item.actual_hours}</td>
-    <td class="child-status-cell">${buildChildStatusCell(item)}</td>
-    <td>${item.adjust_mode ? '<button type="button" class="child-save-btn" disabled>儲存</button>' : ""}</td>`;
-  return tr;
-}
-
-function adjustParentStats(parentRow, { toResolved, toClosed, wasAutoClosed, viaPending }) {
-  const doneCell = parentRow.querySelector(".done-count");
-  const undoneCell = parentRow.querySelector(".undone-count");
-  const forgotCell = parentRow.querySelector(".forgot-count");
-  const bump = (cell, diff) => { cell.textContent = Math.max(0, Number(cell.textContent) + diff); };
-
-  if (viaPending) {
-    // 尚未回報 → 這條路一定會把is_auto_closed設成1，所以忘記回報一定+1
-    bump(forgotCell, 1);
-    if (toResolved) bump(doneCell, 1);
-    return;
-  }
-  // 原本就是「未完成」(沒做完/忘記回報) → 完成或強制結束
-  if (toResolved) {
-    bump(doneCell, 1);
-    if (wasAutoClosed) bump(forgotCell, -1);         // 忘記回報 → 完成：忘記回報次數跟著扣
-    else bump(undoneCell, -1);                       // 沒做完 → 完成：沒做完次數扣
-  }
-  // toClosed：強制結束完全不影響母體任何數字，什麼都不用做
-}
-
-tbody.addEventListener("click", function (e) {
-  // ---- 展開/收合 ----
-  if (e.target.classList.contains("expand-btn")) {
-    const row = e.target.closest("tr");
+  // ---------- 展開/收合：看這個專案底下的階段 ----------
+  if (e.target.classList.contains("expand-project-btn")) {
     const existing = row.nextElementSibling;
-    if (existing && existing.classList.contains("detail-row")) {
-      existing.remove();
-      e.target.textContent = "▶";
-      return;
-    }
+    if (existing && existing.classList.contains("stage-row")) { existing.remove(); e.target.textContent = "▶"; return; }
     e.target.textContent = "▼";
-    const detailTr = document.createElement("tr");
-    detailTr.classList.add("detail-row");
-    detailTr.innerHTML = `<td colspan="10">
-      <table class="detail-table">
-        <thead><tr><th>任務日期</th><th>任務名稱</th><th>開始</th><th>結束</th><th>花費時間</th><th>狀態</th><th>操作</th></tr></thead>
-        <tbody class="detail-tbody"><tr><td colspan="7">載入中...</td></tr></tbody>
-      </table></td>`;
-    row.after(detailTr);
-
-    fetch(`${missionsUrlBase}/${row.dataset.projectId}/missions`)
-      .then((res) => res.json())
-      .then((data) => {
-        const detailTbody = detailTr.querySelector(".detail-tbody");
-        detailTbody.innerHTML = "";
-        if (!data.items.length) {
-          detailTbody.innerHTML = '<tr><td colspan="7">這個長期任務底下還沒有任何紀錄</td></tr>';
-          return;
-        }
-        data.items.forEach((item) => detailTbody.appendChild(renderMissionRow(item)));
-      })
-      .catch(() => { detailTr.querySelector(".detail-tbody").innerHTML = '<tr><td colspan="7">載入失敗</td></tr>'; });
-    return;
-  }
-
-  // ---- 展開列內：下拉改變時，切換理由框跟儲存按鈕是否可按 ----
-  // (change事件另外綁，這裡只處理click)
-
-  // ---- 展開列內：儲存 ----
-  if (e.target.classList.contains("child-save-btn")) {
-    const childRow = e.target.closest("tr");
-    const value = childRow.querySelector(".child-status-select").value;
-    if (!value) return;  // 選回「未完成」或「尚未回報」原始狀態，儲存鍵本來就是disabled
-
-    const adjustMode = childRow.dataset.adjustMode;
-    const wasAutoClosed = childRow.dataset.wasAutoClosed === "1";
-    let url, body;
-
-    if (adjustMode === "open") {
-      const id = childRow.dataset.notfinishedId;
-      if (value === "resolved") {
-        url = `${resolveUrlBase}/${id}/resolve`;
-        body = new URLSearchParams({ delayed_reason: childRow.querySelector(".delayed-reason-input").value.trim() });
-      } else {
-        url = `${closeUrlBase}/${id}/close`;
-        body = new URLSearchParams({ closed_reason: childRow.querySelector(".closed-reason-input").value.trim() });
-      }
-    } else {  // pending
-      const missionId = childRow.dataset.missionId;
-      url = `${reportUrlBase}/${missionId}/report`;
-      const reasonInput = value === "resolved"
-        ? childRow.querySelector(".delayed-reason-input")
-        : childRow.querySelector(".closed-reason-input");
-      body = new URLSearchParams({ final_status: value, reason: reasonInput.value.trim() });
-    }
-
-    fetch(url, { method: "POST", body })
-      .then((res) => res.json())
-      .then((data) => {
-        if (!data.success) { alert(data.message || "操作失敗"); return; }
-
-        childRow.querySelector(".child-status-cell").innerHTML = value === "resolved" ? "完成" : "強制結束";
-        childRow.cells[childRow.cells.length - 1].innerHTML = "";  // 鎖定，不能再調整
-
-        const parentRow = childRow.closest(".detail-row").previousElementSibling;
-        adjustParentStats(parentRow, {
-          toResolved: value === "resolved",
-          toClosed: value === "closed",
-          wasAutoClosed,
-          viaPending: adjustMode === "pending",
-        });
-      })
-      .catch(() => alert("網路錯誤，操作失敗"));
-    return;
+    const tr = document.createElement("tr");
+    tr.classList.add("stage-row");
+    tr.innerHTML = `<td colspan="11"><div class="stage-panel" data-project-id="${pid}">載入中...</div></td>`;
+    row.after(tr);
+    loadStages(pid, tr.querySelector(".stage-panel"));
   }
 });
 
-// change事件：展開列下拉切換時，控制理由框顯示跟儲存按鈕能不能按
-tbody.addEventListener("change", function (e) {
-  if (!e.target.classList.contains("child-status-select")) return;
-  const row = e.target.closest("tr");
-  const value = e.target.value;
-  row.querySelectorAll(".reason-box").forEach((box) => { box.hidden = box.dataset.for !== value; });
-  row.querySelector(".child-save-btn").disabled = !value;
-});
+function loadStages(projectId, container) {
+  // 階段清單這批先走伺服器端渲染的頁面載入不到，改成簡化版：
+  // 直接請你在這個container裡動態組HTML(以下用fetch打一個簡化版API，實務上也可以在Jinja2直接渲染，這裡示範AJAX一致性)
+  container.innerHTML = `
+    <div class="add-stage-inline">
+      <input type="text" class="new-stage-name" placeholder="新階段名稱">
+      <input type="number" class="new-stage-days" placeholder="預估天數" min="1" style="width:100px;">
+      <button type="button" class="add-stage-btn" data-project-id="${projectId}">＋ 新增階段</button>
+    </div>
+    <p><em>階段詳細清單請重新整理頁面後在下方查看（這批先求功能正確，清單呈現下一輪再優化）。</em></p>
+  `;
+  container.querySelector(".add-stage-btn").addEventListener("click", function () {
+    const name = container.querySelector(".new-stage-name").value.trim();
+    const days = container.querySelector(".new-stage-days").value.trim();
+    if (!name || !days) { alert("階段名稱與預估天數必填"); return; }
+    fetch(`${projectRowUrlBase}/${projectId}/stage/add`, { method: "POST", body: new URLSearchParams({ stage_name: name, estimate_days: days }) })
+      .then((res) => res.json())
+      .then((data) => { if (!data.success) { alert(data.message || "新增失敗"); return; } location.reload(); })
+      .catch(() => alert("網路錯誤，新增失敗"));
+  });
+}
 </script>
 {% endblock %}

@@ -1,6 +1,6 @@
 from app.db import get_db
-from app.repositories.mission_repo import finish_mission_from_unfinished
-
+from app.repositories.mission_repo import finish_mission_from_unfinished, close_mission_from_unfinished
+from app.repositories.stage_mission_repo import sync_stage_mission_status
 
 def create_chains_for_newly_unfinished(user_id):
     """幫『剛被標成unfinished、但還沒有任何追蹤紀錄』的任務，各自建立第一筆。
@@ -27,7 +27,7 @@ def get_open_unfinished_missions(user_id):
             """SELECT um.unfinished_id, um.mission_id, um.update_date, dm.mission_name
                FROM unfinished_mission um
                JOIN daily_mission dm ON dm.mission_id = um.mission_id
-               WHERE um.user_id = %s AND um.status = 'open' AND um.is_operatable = 1
+               WHERE um.user_id = %s AND um.status = 'open' AND um.is_operatable = 1 AND dm.project_stage_id IS NULL
                ORDER BY um.update_date""",
             (user_id,),
         )
@@ -63,6 +63,7 @@ def import_continue(user_id, mission_id, today, start_time, end_time, actual_hou
             (user_id, mission_id, current["unfinished_id"], today, start_time, end_time, actual_hours),
         )
     db.commit()
+    sync_stage_mission_status(user_id, mission_id)
     return True
 
 
@@ -89,6 +90,48 @@ def import_resolve(user_id, mission_id, today, start_time, end_time, actual_hour
             (user_id, mission_id, current["unfinished_id"], today, start_time, end_time, actual_hours, delay_reason),
         )
     db.commit()
-
     finish_mission_from_unfinished(user_id, mission_id, start_time, end_time, actual_hours)
+    sync_stage_mission_status(user_id, mission_id)
+    return True, None
+
+def get_open_unfinished_list(user_id):
+    """未完成任務管理頁用：比plan.html的匯入清單多算一個『懸掛天數』。"""
+    db = get_db()
+    with db.cursor() as cur:
+        cur.execute(
+            """SELECT um.unfinished_id, um.mission_id, um.update_date, dm.mission_name,
+                      DATEDIFF(CURDATE(), um.update_date) AS pending_days
+               FROM unfinished_mission um
+               JOIN daily_mission dm ON dm.mission_id = um.mission_id
+               WHERE um.user_id = %s AND um.status = 'open' AND um.is_operatable = 1 AND dm.project_stage_id IS NULL
+               ORDER BY um.update_date""",
+            (user_id,),
+        )
+        return cur.fetchall()
+
+
+def close_unfinished(user_id, mission_id, today, closed_reason):
+    """強制結束：退場目前活著的那一筆，新增一筆closed終點紀錄，連動daily_mission。
+    closed_reason必填——這是你確認過的規則，在資料庫真的被改動之前就先擋下來。"""
+    if not closed_reason:
+        return False, "請填寫結束原因"
+
+    db = get_db()
+    with db.cursor() as cur:
+        current = _get_current_open(cur, user_id, mission_id)
+        if current is None:
+            return False, "找不到這筆未完成任務的追蹤紀錄"
+        cur.execute(
+            "UPDATE unfinished_mission SET is_operatable=0, sequence_exit=1 WHERE unfinished_id=%s",
+            (current["unfinished_id"],),
+        )
+        cur.execute(
+            """INSERT INTO unfinished_mission
+               (user_id, mission_id, status, is_operatable, sequence_exit, follower_id, update_date, closed_reason)
+               VALUES (%s, %s, 'closed', 0, 0, %s, %s, %s)""",
+            (user_id, mission_id, current["unfinished_id"], today, closed_reason),
+        )
+    db.commit()
+    sync_stage_mission_status(user_id, mission_id)
+    close_mission_from_unfinished(user_id, mission_id, today)
     return True, None

@@ -1,5 +1,5 @@
 from app.db import get_db
-
+from app.repositories.stage_mission_repo import sync_stage_mission_status
 
 def get_active_dates_in_range(user_id, start_date, end_date):
     """撈這段期間裡所有「有活動痕跡」的日期，用在首頁週表格／月曆頁判斷哪幾天要顯示連結。
@@ -123,7 +123,10 @@ def report_mission_result(user_id, mission_id, is_finished, start_time, end_time
             (start_time, end_time, actual_hours, 1 if is_finished else 0, mission_id, user_id),
         )
     db.commit()
+    if cur.rowcount:
+        sync_stage_mission_status(user_id, mission_id)
     return cur.rowcount
+    
 
 
 # def close_overdue_missions(user_id, today):
@@ -164,6 +167,19 @@ def finish_mission_from_unfinished(user_id, mission_id, start_time, end_time, ac
                    is_ONTime_finished=0, start_time=%s, end_time=%s, actual_hours=%s
                WHERE mission_id=%s AND user_id=%s""",
             (start_time, end_time, actual_hours, mission_id, user_id),
+        )
+    db.commit()
+
+def close_mission_from_unfinished(user_id, mission_id, today):
+    """強制結束：daily_mission.status變finished，但不像『報完成』那樣記錄start/end/actual_hours
+    ——強制結束不代表真的投入了多少時間，這幾欄保持空白。is_ONTime_finished固定寫0。"""
+    db = get_db()
+    with db.cursor() as cur:
+        cur.execute(
+            """UPDATE daily_mission
+               SET status='finished', mission_finish_date=%s, is_ONTime_finished=0
+               WHERE mission_id=%s AND user_id=%s""",
+            (today, mission_id, user_id),
         )
     db.commit()
 
