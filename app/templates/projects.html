@@ -110,27 +110,191 @@ document.getElementById("project-tbody").addEventListener("click", function (e) 
     loadStages(pid, tr.querySelector(".stage-panel"));
   }
 });
+const stagesUrlBase = "{{ url_for('project.project_stages_api', project_id=0) }}".replace(/\/0\/stages$/, "");
+const addStageUrlBase = "{{ url_for('project.add_stage_ajax', project_id=0) }}".replace(/\/0\/stage\/add$/, "");
+const resolveStageUrlBase = "{{ url_for('project.resolve_stage_ajax', project_id=0, stage_id=0) }}".replace(/\/0\/stage\/0\/resolve$/, "");
+const closeStageUrlBase = "{{ url_for('project.close_stage_ajax', project_id=0, stage_id=0) }}".replace(/\/0\/stage\/0\/close$/, "");
+const stageMissionsUrlBase2 = "{{ url_for('project.stage_missions_api', stage_id=0) }}".replace(/\/0\/missions$/, "");
+const assignUrlBase2 = "{{ url_for('project.assign_mission_ajax', stage_id=0) }}".replace(/\/0\/assign$/, "");
+
+const STAGE_STATUS_LABEL = { ongoing: "進行中", resolved: "已完成", stopped: "已關閉" };
 
 function loadStages(projectId, container) {
-  // 階段清單這批先走伺服器端渲染的頁面載入不到，改成簡化版：
-  // 直接請你在這個container裡動態組HTML(以下用fetch打一個簡化版API，實務上也可以在Jinja2直接渲染，這裡示範AJAX一致性)
-  container.innerHTML = `
-    <div class="add-stage-inline">
-      <input type="text" class="new-stage-name" placeholder="新階段名稱">
-      <input type="number" class="new-stage-days" placeholder="預估天數" min="1" style="width:100px;">
-      <button type="button" class="add-stage-btn" data-project-id="${projectId}">＋ 新增階段</button>
-    </div>
-    <p><em>階段詳細清單請重新整理頁面後在下方查看（這批先求功能正確，清單呈現下一輪再優化）。</em></p>
-  `;
+  container.innerHTML = "載入中...";
+  fetch(`${stagesUrlBase}/${projectId}/stages`)
+    .then((res) => res.json())
+    .then((data) => renderStagePanel(projectId, container, data.items))
+    .catch(() => { container.innerHTML = "載入失敗"; });
+}
+
+function renderStagePanel(projectId, container, stages) {
+  const table = document.createElement("table");
+  table.innerHTML = `
+    <thead><tr>
+      <th></th><th>期數</th><th>階段名稱</th><th>狀態</th><th>預估天數</th>
+      <th>開始日</th><th>預估結案</th><th>實際結案</th>
+      <th>任務數</th><th>完成</th><th>未完成</th><th>操作</th>
+    </tr></thead>
+    <tbody></tbody>`;
+  const tbody = table.querySelector("tbody");
+
+  stages.forEach((s) => {
+    const tr = document.createElement("tr");
+    tr.dataset.stageId = s.project_stage_id;
+    const actionCell = s.status === "ongoing"
+      ? `<input type="text" class="stage-reason-input" placeholder="理由(必填)">
+         <button type="button" class="resolve-stage-btn">完成</button>
+         <button type="button" class="close-stage-btn">關閉</button>`
+      : "";
+    tr.innerHTML = `
+      <td><button type="button" class="expand-stage-btn">▶</button></td>
+      <td>${s.stage_no}</td><td>${s.stage_name}</td>
+      <td>${STAGE_STATUS_LABEL[s.status]}</td>
+      <td>${s.estimate_days}</td><td>${s.start_date}</td>
+      <td>${s.estimated_finish_date}</td><td>${s.actual_finish_date}</td>
+      <td>${s.mission_count}</td><td>${s.finished_count}</td><td>${s.unfinished_count}</td>
+      <td>${actionCell}</td>`;
+    tbody.appendChild(tr);
+  });
+
+  if (!stages.length) {
+    tbody.innerHTML = `<tr><td colspan="12">這個專案還沒有任何階段</td></tr>`;
+  }
+
+  const addRow = document.createElement("div");
+  addRow.className = "add-stage-inline";
+  addRow.innerHTML = `
+    <input type="text" class="new-stage-name" placeholder="新階段名稱">
+    <input type="number" class="new-stage-days" placeholder="預估天數" min="1" style="width:100px;">
+    <button type="button" class="add-stage-btn">＋ 新增階段</button>`;
+
+  container.innerHTML = "";
+  container.appendChild(table);
+  container.appendChild(addRow);
+
+  bindStagePanelEvents(projectId, container, tbody);
+}
+
+function bindStagePanelEvents(projectId, container, tbody) {
   container.querySelector(".add-stage-btn").addEventListener("click", function () {
     const name = container.querySelector(".new-stage-name").value.trim();
     const days = container.querySelector(".new-stage-days").value.trim();
     if (!name || !days) { alert("階段名稱與預估天數必填"); return; }
-    fetch(`${projectRowUrlBase}/${projectId}/stage/add`, { method: "POST", body: new URLSearchParams({ stage_name: name, estimate_days: days }) })
+    fetch(`${addStageUrlBase}/${projectId}/stage/add`, { method: "POST", body: new URLSearchParams({ stage_name: name, estimate_days: days }) })
       .then((res) => res.json())
       .then((data) => { if (!data.success) { alert(data.message || "新增失敗"); return; } location.reload(); })
       .catch(() => alert("網路錯誤，新增失敗"));
   });
+
+  tbody.addEventListener("click", function (e) {
+    const row = e.target.closest("tr");
+    if (!row || !row.dataset.stageId) return;
+    const stageId = row.dataset.stageId;
+
+    // ---- 階段完成/關閉 ----
+    if (e.target.classList.contains("resolve-stage-btn") || e.target.classList.contains("close-stage-btn")) {
+      const reason = row.querySelector(".stage-reason-input").value.trim();
+      if (!reason) { alert("請填寫理由"); return; }
+      const isResolve = e.target.classList.contains("resolve-stage-btn");
+      const url = isResolve
+        ? `${resolveStageUrlBase}/${projectId}/stage/${stageId}/resolve`
+        : `${closeStageUrlBase}/${projectId}/stage/${stageId}/close`;
+      const field = isResolve ? "delay_reason" : "closed_reason";
+
+      fetch(url, { method: "POST", body: new URLSearchParams({ [field]: reason }) })
+        .then((res) => res.json())
+        .then((data) => { if (!data.success) { alert(data.message || "操作失敗"); return; } location.reload(); })
+        .catch(() => alert("網路錯誤，操作失敗"));
+      return;
+    }
+
+    // ---- 展開/收合：這個階段底下的任務清單 + 歸類任務區 ----
+    if (e.target.classList.contains("expand-stage-btn")) {
+      const existing = row.nextElementSibling;
+      if (existing && existing.classList.contains("mission-row")) { existing.remove(); e.target.textContent = "▶"; return; }
+      e.target.textContent = "▼";
+      const tr = document.createElement("tr");
+      tr.classList.add("mission-row");
+      tr.innerHTML = `<td colspan="12"><div class="mission-panel">載入中...</div></td>`;
+      row.after(tr);
+      loadStageMissions(stageId, tr.querySelector(".mission-panel"));
+    }
+  });
 }
+
+function loadStageMissions(stageId, container) {
+  fetch(`${stageMissionsUrlBase2}/${stageId}/missions`)
+    .then((res) => res.json())
+    .then((data) => renderMissionPanel(stageId, container, data.items, data.assignable))
+    .catch(() => { container.innerHTML = "載入失敗"; });
+}
+
+const MISSION_STATUS_LABEL = { arrangement: "尚未開始", open: "未完成", resolved: "完成", closed: "強制結束" };
+
+function renderMissionPanel(stageId, container, items, assignable) {
+  const table = document.createElement("table");
+  table.innerHTML = `
+    <thead><tr><th>任務名稱</th><th>建立日</th><th>結案日</th><th>狀態</th></tr></thead>
+    <tbody></tbody>`;
+  const tbody = table.querySelector("tbody");
+  items.forEach((m) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${m.mission_name}</td><td>${m.mission_start_date}</td>
+      <td>${m.mission_finish_date}</td><td>${MISSION_STATUS_LABEL[m.status] || m.status}</td>`;
+    tbody.appendChild(tr);
+  });
+  if (!items.length) tbody.innerHTML = `<tr><td colspan="4">這個階段底下還沒有任務</td></tr>`;
+
+  const assignBox = document.createElement("div");
+  assignBox.className = "assign-mission-box";
+  if (assignable.length) {
+    const options = assignable.map((a) => `<option value="${a.mission_id}">${a.mission_name}</option>`).join("");
+    assignBox.innerHTML = `
+      <h4>把現有任務歸類進這個階段</h4>
+      <select class="assignable-select"><option value="">請選擇任務</option>${options}</select>
+      <button type="button" class="assign-btn">歸類</button>`;
+  } else {
+    assignBox.innerHTML = `<p><em>目前沒有可歸類的任務（只有「尚未回報」且還沒被歸類的任務可以選）</em></p>`;
+  }
+
+  container.innerHTML = "";
+  container.appendChild(table);
+  container.appendChild(assignBox);
+
+  const assignBtn = assignBox.querySelector(".assign-btn");
+  if (assignBtn) {
+    assignBtn.addEventListener("click", function () {
+      const missionId = assignBox.querySelector(".assignable-select").value;
+      if (!missionId) { alert("請選擇一個任務"); return; }
+      fetch(`${assignUrlBase2}/${stageId}/assign`, { method: "POST", body: new URLSearchParams({ mission_id: missionId }) })
+        .then((res) => res.json())
+        .then((data) => { if (!data.success) { alert(data.message || "歸類失敗"); return; } location.reload(); })
+        .catch(() => alert("網路錯誤，歸類失敗"));
+    });
+  }
+}
+
+// function loadStages(projectId, container) {
+//   // 階段清單這批先走伺服器端渲染的頁面載入不到，改成簡化版：
+//   // 直接請你在這個container裡動態組HTML(以下用fetch打一個簡化版API，實務上也可以在Jinja2直接渲染，這裡示範AJAX一致性)
+//   container.innerHTML = `
+//     <div class="add-stage-inline">
+//       <input type="text" class="new-stage-name" placeholder="新階段名稱">
+//       <input type="number" class="new-stage-days" placeholder="預估天數" min="1" style="width:100px;">
+//       <button type="button" class="add-stage-btn" data-project-id="${projectId}">＋ 新增階段</button>
+//     </div>
+//     <p><em>階段詳細清單請重新整理頁面後在下方查看（這批先求功能正確，清單呈現下一輪再優化）。</em></p>
+//   `;
+//   container.querySelector(".add-stage-btn").addEventListener("click", function () {
+//     const name = container.querySelector(".new-stage-name").value.trim();
+//     const days = container.querySelector(".new-stage-days").value.trim();
+//     if (!name || !days) { alert("階段名稱與預估天數必填"); return; }
+//     fetch(`${projectRowUrlBase}/${projectId}/stage/add`, { method: "POST", body: new URLSearchParams({ stage_name: name, estimate_days: days }) })
+//       .then((res) => res.json())
+//       .then((data) => { if (!data.success) { alert(data.message || "新增失敗"); return; } location.reload(); })
+//       .catch(() => alert("網路錯誤，新增失敗"));
+//   });
+// }
+
 </script>
 {% endblock %}

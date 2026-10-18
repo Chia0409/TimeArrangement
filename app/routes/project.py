@@ -7,16 +7,6 @@ from app.repositories.project_repo import (
 )
 from app.repositories.stage_mission_repo import get_stage_missions, get_assignable_missions, assign_mission_to_stage
 from app.services.auth_service import login_required
-# from datetime import datetime
-# from flask import Blueprint, render_template, request, session, jsonify
-
-# from app.repositories.project_repo import (
-#     create_project_with_stages, get_projects_overview, get_project, get_project_stages,
-#     add_stage, resolve_stage, close_stage, resolve_project, close_project,
-# )
-# from app.repositories.stage_mission_repo import get_stage_missions, get_assignable_missions, assign_mission_to_stage
-# from app.services.auth_service import login_required
-
 
 
 project_bp = Blueprint("project", __name__)
@@ -126,6 +116,29 @@ def assign_mission_ajax(stage_id):
     if not assign_mission_to_stage(session["user_id"], stage_id, int(mission_id)):
         return jsonify(success=False, message="這個任務已經被歸類過了"), 400
     return jsonify(success=True)
+@project_bp.route("/projects/<int:project_id>/stages")
+@login_required
+def project_stages_api(project_id):
+    user_id = session["user_id"]
+    stages = get_project_stages(user_id, project_id)
+    return jsonify(items=[
+        {
+            "project_stage_id": s["project_stage_id"],
+            "stage_no": s["stage_no"],
+            "stage_name": s["stage_name"],
+            "status": s["status"],
+            "estimate_days": s["estimate_days"],
+            "start_date": s["start_date"].strftime("%Y/%m/%d"),
+            "estimated_finish_date": s["estimated_finish_date"].strftime("%Y/%m/%d") if s["estimated_finish_date"] else "-",
+            "actual_finish_date": s["actual_finish_date"].strftime("%Y/%m/%d") if s["actual_finish_date"] else "-",
+            # 這三個數字來自SQL的COUNT()/SUM()，PyMySQL讀回來常常是Decimal不是int，
+            # jsonify沒辦法把Decimal轉成JSON，這裡先明確轉型，不然會直接500
+            "mission_count": int(s["mission_count"]),
+            "finished_count": int(s["finished_count"]),
+            "unfinished_count": int(s["unfinished_count"]),
+        }
+        for s in stages
+    ])
 
 # # the added for not causing the ImportError
 # def name_taken(user_id, project_name, exclude_id=None):
