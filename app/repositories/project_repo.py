@@ -230,3 +230,22 @@ def close_project(user_id, project_id, closed_reason):
     for mid in all_affected:
         sync_stage_mission_status(user_id, mid)
     return True, None
+
+def get_ongoing_projects(user_id):
+    db = get_db()
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT project_id, project_name FROM project WHERE user_id=%s AND status='ongoing' ORDER BY project_name",
+            (user_id,),
+        )
+        return cur.fetchall()
+
+
+def get_ongoing_stages(user_id, project_id):
+    db = get_db()
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT project_stage_id, stage_name FROM project_stage WHERE project_id=%s AND user_id=%s AND status='ongoing' ORDER BY stage_no",
+            (project_id, user_id),
+        )
+        return cur.fetchall()

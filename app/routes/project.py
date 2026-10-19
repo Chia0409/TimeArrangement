@@ -4,6 +4,7 @@ from flask import Blueprint, render_template, request, session, jsonify
 from app.repositories.project_repo import (
     create_project_with_stages, get_projects_overview, get_project, get_project_stages,
     add_stage, resolve_stage, close_stage, resolve_project, close_project,
+    get_ongoing_projects, get_ongoing_stages,
 )
 from app.repositories.stage_mission_repo import get_stage_missions, get_assignable_missions, assign_mission_to_stage
 from app.services.auth_service import login_required
@@ -140,17 +141,13 @@ def project_stages_api(project_id):
         for s in stages
     ])
 
-# # the added for not causing the ImportError
-# def name_taken(user_id, project_name, exclude_id=None):
-#     """這個人「進行中」的長期任務裡，有沒有同名的。
-#     exclude_id用來排除自己：專案id從1開始，傳0(None時)就等於誰都不排除。"""
-#     db = get_db()
-#     with db.cursor() as cur:
-#         cur.execute(
-#             """SELECT 1 FROM project
-#                WHERE user_id = %s AND project_name = %s AND is_finished = 0
-#                  AND project_id <> %s
-#                LIMIT 1""",
-#             (user_id, project_name, exclude_id or 0),
-#         )
-#         return cur.fetchone() is not None
+@project_bp.route("/projects/api/ongoing")
+@login_required
+def ongoing_projects_api():
+    return jsonify(items=get_ongoing_projects(session["user_id"]))
+
+
+@project_bp.route("/projects/<int:project_id>/api/ongoing-stages")
+@login_required
+def ongoing_stages_api(project_id):
+    return jsonify(items=get_ongoing_stages(session["user_id"], project_id))

@@ -9,12 +9,19 @@
 
   <h2>待回報</h2>
   <table>
-    <thead><tr><th>編號</th><th>任務名稱</th><th>是否完成</th><th>開始</th><th>結束</th><th>操作</th></tr></thead>
+    <thead><tr><th>編號</th><th>任務名稱</th><th>開始</th><th>結束</th><th>耗時</th>
+        <th>專案隸屬</th><th>階段隸屬</th><th>標籤</th><th>是否完成</th><th>操作</th></tr></thead>
     <tbody id="pending-tbody">
       {% for m in pending %}
-      <tr data-mission-id="{{ m.mission_id }}">
+      <tr data-mission-id="{{ m.mission_id }}" data-current-project="{{ m.project_id or '' }}" data-current-stage="{{ m.project_stage_id or '' }}">
         <td>{{ m.mission_no }}</td>
         <td>{{ m.mission_name }}</td>
+        <td><input type="time" class="start-input" value="{{ m.start_time or '' }}"></td>
+        <td><input type="time" class="end-input" value="{{ m.end_time or '' }}"></td>
+        <td class="hours-display">-</td>
+        <td class="project-cell"><select class="project-select"><option value="">none</option></select></td>
+        <td class="stage-cell"><select class="stage-select"><option value="">none</option></select></td>
+        <td><input type="text" class="category-input" value="{{ m.category or '' }}" placeholder="標籤"></td>
         <td>
           <select class="finish-select">
             <option value="" selected>請選擇</option>
@@ -22,31 +29,57 @@
             <option value="0">未完成</option>
           </select>
         </td>
-        <td><input type="time" class="start-input"></td>
-        <td><input type="time" class="end-input"></td>
-        <td>{% if can_edit %}<button type="button" class="report-btn">送出</button>{% endif %}</td>
+        <td>{% if can_edit %}<button type="button" class="report-btn">儲存</button>{% endif %}</td>
       </tr>
       {% else %}
-      <tr><td colspan="6">目前沒有待回報的任務</td></tr>
+      <tr><td colspan="10">目前沒有待回報的任務</td></tr>
       {% endfor %}
     </tbody>
   </table>
 
   <h2>已回報</h2>
   <table>
-    <thead><tr><th>編號</th><th>任務名稱</th><th>是否完成</th><th>開始</th><th>結束</th><th>實際時數</th></tr></thead>
+    <thead><tr><th>編號</th><th>任務名稱</th><th>開始</th><th>結束</th><th>耗時</th>
+      <th>專案隸屬</th><th>階段隸屬</th><th>標籤</th><th>是否完成</th><th>準時完成</th><th>操作</th></tr></thead>
     <tbody>
       {% for m in finished %}
       <tr>
         <td>{{ m.mission_no }}</td>
         <td>{{ m.mission_name }}</td>
-        <td>{{ "已完成" if m.is_ONTime_finished is not none and m.actual_hours is not none else "結束" }}</td>
         <td>{{ m.start_time or '-' }}</td>
         <td>{{ m.end_time or '-' }}</td>
         <td>{{ m.actual_hours if m.actual_hours is not none else '-' }}</td>
+        <td>{{ m.project_name or 'none' }}</td>
+        <td>{{ m.stage_name or 'none' }}</td>
+        <td>{{ m.category or 'none' }}</td>
+        <td>是</td>
+        <td>{{ "是" if m.is_ONTime_finished else "否" }}</td>
+        <td>已完成</td>
       </tr>
       {% else %}
-      <tr><td colspan="6">目前沒有已回報的任務</td></tr>
+      <tr><td colspan="10">目前沒有已回報的任務</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h2>已標記未完成</h2>
+  <table>
+    <thead><tr><th>編號</th><th>任務名稱</th><th>開始</th><th>結束</th><th>耗時</th>
+        <th>專案隸屬</th><th>階段隸屬</th><th>標籤</th></tr></thead>
+    <tbody>
+      {% for m in unfinished %}
+      <tr>
+        <td>{{ m.mission_no }}</td>
+        <td>{{ m.mission_name }}</td>
+        <td>{{ m.start_time or '-' }}</td>
+        <td>{{ m.end_time or '-' }}</td>
+        <td>{{ m.actual_hours if m.actual_hours is not none else '-' }}</td>
+        <td>{{ m.project_name or 'none' }}</td>
+        <td>{{ m.stage_name or 'none' }}</td>
+        <td>{{ m.category or 'none' }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8">目前沒有被標記未完成的任務</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -54,28 +87,78 @@
 {% endif %}
 
 <script>
-const reportUrlBase = "{{ url_for('summary.report_mission', date_str=mission_date.isoformat(), mission_id=0) }}".replace("/0/report", "");
+const reportUrlBase = "{{ url_for('summary.report_mission', date_str=mission_date.isoformat(), mission_id=0) }}".replace(/\/0\/report$/, "");
+const ongoingProjectsUrl = "{{ url_for('project.ongoing_projects_api') }}";
+const ongoingStagesUrlBase = "{{ url_for('project.ongoing_stages_api', project_id=0) }}".replace(/\/0\/api\/ongoing-stages$/, "");
+
+let projectCache = null;
+function loadProjects() {
+  if (projectCache) return Promise.resolve(projectCache);
+  return fetch(ongoingProjectsUrl).then((r) => r.json()).then((d) => { projectCache = d.items; return projectCache; });
+}
+function fillProjectSelect(select, preselect) {
+  loadProjects().then((items) => {
+    select.innerHTML = '<option value="">none</option>';
+    items.forEach((p) => select.add(new Option(p.project_name, p.project_id)));
+    if (preselect) select.value = String(preselect);
+  });
+}
+function fillStageSelect(select, projectId, preselect) {
+  select.innerHTML = '<option value="">none</option>';
+  if (!projectId) return;
+  fetch(`${ongoingStagesUrlBase}/${projectId}/api/ongoing-stages`)
+    .then((r) => r.json())
+    .then((d) => {
+      d.items.forEach((s) => select.add(new Option(s.stage_name, s.project_stage_id)));
+      if (preselect) select.value = String(preselect);
+    });
+}
+document.querySelectorAll("#pending-tbody tr[data-mission-id]").forEach((row) => {
+  const projectSelect = row.querySelector(".project-select");
+  const stageSelect = row.querySelector(".stage-select");
+  const currentProject = row.dataset.currentProject;
+  const currentStage = row.dataset.currentStage;
+  fillProjectSelect(projectSelect, currentProject);
+  if (currentProject) fillStageSelect(stageSelect, currentProject, currentStage);
+  projectSelect.addEventListener("change", function () { fillStageSelect(stageSelect, this.value, null); });
+});
+
+function calcHours(row) {
+  const start = row.querySelector(".start-input").value;
+  const end = row.querySelector(".end-input").value;
+  const display = row.querySelector(".hours-display");
+  if (!start || !end) { display.textContent = "-"; return null; }
+  const [sh, sm] = start.split(":").map(Number);
+  const [eh, em] = end.split(":").map(Number);
+  const diff = (eh * 60 + em) - (sh * 60 + sm);
+  if (diff <= 0) { display.textContent = "-"; return null; }
+  const hours = Math.round((diff / 60) * 100) / 100;
+  display.textContent = hours;
+  return hours;
+}
+document.getElementById("pending-tbody")?.addEventListener("input", function (e) {
+  if (e.target.classList.contains("start-input") || e.target.classList.contains("end-input")) calcHours(e.target.closest("tr"));
+});
 
 document.getElementById("pending-tbody")?.addEventListener("click", function (e) {
   if (!e.target.classList.contains("report-btn")) return;
   const row = e.target.closest("tr");
   const missionId = row.dataset.missionId;
   const select = row.querySelector(".finish-select");
-
   if (!select.value) { alert("請選擇是否完成"); return; }
+  if (!confirm("儲存後不可再次修改，確定要送出嗎？")) return;
 
   const body = new URLSearchParams({
     is_finished: select.value,
     start_time: row.querySelector(".start-input").value,
     end_time: row.querySelector(".end-input").value,
+    category: row.querySelector(".category-input").value.trim(),
+    project_stage_id: row.querySelector(".stage-select").value,
   });
 
   fetch(`${reportUrlBase}/${missionId}/report`, { method: "POST", body })
-    .then((res) => res.json())
-    .then((data) => {
-      if (!data.success) { alert(data.message || "送出失敗"); return; }
-      location.reload();  // 這批先求簡單，直接整頁刷新重撈資料，不手動搬DOM
-    })
+    .then((r) => r.json())
+    .then((d) => { if (!d.success) { alert(d.message || "送出失敗"); return; } location.reload(); })
     .catch(() => alert("網路錯誤，送出失敗"));
 });
 </script>
