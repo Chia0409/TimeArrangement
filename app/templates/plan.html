@@ -169,6 +169,9 @@ document.getElementById("mission-tbody").addEventListener("click", function (e) 
     const name = nameInput.value.trim();
     if (!name || !startInput.value || !endInput.value) { alert("任務名稱、預計開始與結束時間不能空白"); return; }
     if (calcHours(row) === null) { alert("結束時間必須晚於開始時間"); return; }
+    const projectVal = row.querySelector(".project-select").value;
+    const stageVal = row.querySelector(".stage-select").value;
+    if (projectVal && !stageVal) { alert("已選擇專案隸屬，請一併選擇專案階段"); return; }
 
     const body = new URLSearchParams({
       mission_name: name, start_time: startInput.value, end_time: endInput.value,
@@ -184,7 +187,7 @@ document.getElementById("mission-tbody").addEventListener("click", function (e) 
       .then((d) => {
         if (!d.success) { alert(d.message || "儲存失敗"); return; }
         if (!missionId) { row.dataset.missionId = d.mission_id; row.cells[0].textContent = d.mission_no; }
-        flashDone(e.target, "已儲存 ✓");
+        flashDone(e.target, d.unchanged ? "資料已儲存（未變更）" : "已儲存 ✓");
       })
       .catch(() => alert("網路錯誤，儲存失敗"));
   }
