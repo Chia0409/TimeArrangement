@@ -20,18 +20,18 @@
       <td><input type="time" class="start-input" value="{{ m.start_time or '' }}"></td>
       <td><input type="time" class="end-input" value="{{ m.end_time or '' }}"></td>
       <td class="hours-display">{{ m.estimated_hours if m.estimated_hours is not none else '-' }}</td>
-      <td class="project-cell"><select class="project-select flex-col"><option value="">none</option></select></td>
-      <td class="stage-cell"><select class="stage-select flex-col"><option value="">none</option></select></td>
+      <td class="project-cell"><select class="project-select"><option value="">none</option></select></td>
+      <td class="stage-cell"><select class="stage-select"><option value="">none</option></select></td>
       <td><input type="text" class="category-input flex-input" value="{{ m.category or '' }}" placeholder="標籤"></td>
       <td>{% if editable %}<button type="button" class="save-btn">儲存</button> <button type="button" class="delete-btn">刪除</button>{% endif %}</td>
       {% else %}
-      <td class="flex-col">{{ m.mission_name }}</td>
-      <td class="flex-col">{{ m.start_time or '-' }}</td>
-      <td class="flex-col">{{ m.end_time or '-' }}</td>
-      <td class="flex-col">{{ m.estimated_hours if m.estimated_hours is not none else '-' }}</td>
-      <td class="flex-col">{{ m.project_name or 'none' }}</td>
-      <td class="flex-col">{{ m.stage_name or 'none' }}</td>
-      <td class="flex-col">{{ m.category or 'none' }}</td>
+      <td>{{ m.mission_name }}</td>
+      <td>{{ m.start_time or '-' }}</td>
+      <td>{{ m.end_time or '-' }}</td>
+      <td>{{ m.estimated_hours if m.estimated_hours is not none else '-' }}</td>
+      <td>{{ m.project_name or 'none' }}</td>
+      <td>{{ m.stage_name or 'none' }}</td>
+      <td>{{ m.category or 'none' }}</td>
       <td>已完成</td>
       {% endif %}
     </tr>
@@ -42,38 +42,109 @@
 </table>
 </div>
 <br>
-{% if editable %}<button type="button" id="add-row-btn">＋ 新增任務</button>{% endif %}
-{% if editable %}<text>＋ 未完成任務：</text>{% endif %}
+{% if editable %}
+<button type="button" id="add-row-btn">＋ 新增任務</button>
+<button type="button" id="toggle-unfinished-filter-btn">未完成任務</button>
+<span id="unfinished-filter-panel" hidden>
+  <span id="unfinished-filter-count"></span>
+  <select id="unfinished-filter-select"></select>
+</span>
 
-{% if status == 'today' and open_unfinished %}
+{% endif %}
 
+
+{% if status == 'today'%}
+<div id="unfinished-info-section" hidden>
 <h2>未完成任務資訊</h2>
-<div class="table-scroll"></div>
+<div class="table-scroll">
 <table>
   <thead><tr><th>任務名稱</th><th>原訂日期</th><th>專案隸屬</th><th>階段隸屬</th><th>標籤</th><th>操作</th></tr></thead>
   <tbody id="import-tbody">
     {% for u in open_unfinished %}
     <tr data-mission-id="{{ u.mission_id }}" data-current-project="{{ u.project_id or '' }}" data-current-stage="{{ u.project_stage_id or '' }}">
-      <td class="flex-col">{{ u.mission_name }}</td>
-      <td class="flex-col">{{ u.update_date.strftime('%Y/%m/%d') }}</td>
+      <td>{{ u.mission_name }}</td>
+      <td>{{ u.update_date.strftime('%Y/%m/%d') }}</td>
       <td class="project-cell"><select class="project-select"><option value="">none</option></select></td>
       <td class="stage-cell"><select class="stage-select"><option value="">none</option></select></td>
-      <td class="flex-col"><input type="text" class="category-input" value="{{ u.category or '' }}" placeholder="標籤"></td>
-      <td class="flex-col"><button type="button" class="import-btn">送出</button></td>
+      <td><input type="text" class="category-input" value="{{ u.category or '' }}" placeholder="標籤"></td>
+      <td><button type="button" class="import-btn">送出</button></td>
     </tr>
     {% endfor %}
   </tbody>
 </table>
 </div>
+</div>
 {% endif %}
 
 <script>
+const unfinishedInfoSection = document.getElementById("unfinished-info-section");  
 const addUrl = "{{ url_for('plan.add_mission_ajax', date_str=mission_date.isoformat()) }}";
 const updateUrlBase = "{{ url_for('plan.update_mission_ajax', date_str=mission_date.isoformat(), mission_id=0) }}".replace(/\/0\/update$/, "");
 const deleteUrlBase = "{{ url_for('plan.delete_mission_ajax', date_str=mission_date.isoformat(), mission_id=0) }}".replace(/\/0\/delete$/, "");
 const importUrlBase = "{{ url_for('plan.import_mission_ajax', date_str=mission_date.isoformat(), mission_id=0) }}".replace(/\/0\/import$/, "");
 const ongoingProjectsUrl = "{{ url_for('project.ongoing_projects_api') }}";
 const ongoingStagesUrlBase = "{{ url_for('project.ongoing_stages_api', project_id=0) }}".replace(/\/0\/api\/ongoing-stages$/, "");
+// ========== 未完成任務篩選器 ==========
+const unfinishedFilterCount = document.getElementById("unfinished-filter-count");
+const toggleUnfinishedBtn = document.getElementById("toggle-unfinished-filter-btn");
+const unfinishedFilterPanel = document.getElementById("unfinished-filter-panel");
+const unfinishedFilterSelect = document.getElementById("unfinished-filter-select");
+
+function getImportRows() {
+  return Array.from(document.querySelectorAll("#import-tbody tr[data-mission-id]"));
+}
+
+function applyUnfinishedFilter() {
+  const value = unfinishedFilterSelect.value;
+  getImportRows().forEach((row) => {
+    // value為空字串(預設狀態)代表『什麼都不選』，所有列都先隱藏，跟『all』明確選中所有未完成是兩回事
+    row.hidden = !(value === "all" || row.dataset.missionId === value);
+  });
+}
+
+function populateUnfinishedFilter() {
+  const rows = getImportRows();
+  unfinishedFilterSelect.innerHTML = "";
+  unfinishedFilterCount.textContent = `共 ${rows.length} 筆未完成任務`;
+
+  if (!rows.length) {
+    unfinishedFilterSelect.add(new Option("沒有未完成任務", ""));
+    unfinishedFilterSelect.disabled = true;
+    applyUnfinishedFilter();   // 0筆的情況下，這行等於把所有列(其實也是0列)維持隱藏，單純讓邏輯一致不用特別分支
+    return;
+  }
+
+  unfinishedFilterSelect.disabled = false;
+  unfinishedFilterSelect.add(new Option("請選擇", ""));
+  unfinishedFilterSelect.add(new Option("所有未完成", "all"));
+  rows.forEach((row) => {
+    const name = row.cells[0].textContent.trim();
+    unfinishedFilterSelect.add(new Option(name, row.dataset.missionId));
+  });
+
+  applyUnfinishedFilter();   // 預設選到「請選擇」(value="")，套用後所有列維持隱藏，符合你要的「預設不出現任何任務」
+}
+
+toggleUnfinishedBtn?.addEventListener("click", function () {
+  const rows = getImportRows();
+
+  if (!rows.length) {
+    alert("目前沒有未完成任務");
+    return;
+  }
+
+  const willShow = unfinishedInfoSection.hidden;
+  if (willShow) {
+    populateUnfinishedFilter();
+    unfinishedFilterPanel.hidden = false;
+    unfinishedInfoSection.hidden = false;
+  } else {
+    unfinishedFilterPanel.hidden = true;
+    unfinishedInfoSection.hidden = true;
+  }
+});
+
+unfinishedFilterSelect?.addEventListener("change", applyUnfinishedFilter);
 
 let projectCache = null;
 function loadProjects() {
@@ -137,16 +208,6 @@ document.getElementById("mission-tbody").addEventListener("click", function (e) 
   const row = e.target.closest("tr");
   if (!row) return;
 
-  // if (e.target.classList.contains("delete-btn")) {
-  //   const missionId = row.dataset.missionId;
-  //   if (!missionId) { row.remove(); return; }
-  //   if (!confirm("確定要刪除這筆任務嗎？")) return;
-  //   fetch(`${deleteUrlBase}/${missionId}/delete`, { method: "POST" })
-  //     .then((r) => r.json())
-  //     .then((d) => { if (d.success) row.remove(); else alert(d.message || "刪除失敗"); })
-  //     .catch(() => alert("網路錯誤，刪除失敗"));
-  //   return;
-  // }
   if (e.target.classList.contains("delete-btn")) {
     const missionId = row.dataset.missionId;
     if (!missionId) { row.remove(); return; }

@@ -13,7 +13,7 @@
         <th>專案隸屬</th><th>階段隸屬</th><th>標籤</th><th>是否完成</th><th>操作</th></tr></thead>
     <tbody id="pending-tbody">
       {% for m in pending %}
-      <tr data-mission-id="{{ m.mission_id }}" data-current-project="{{ m.project_id or '' }}" data-current-stage="{{ m.project_stage_id or '' }}">
+      <tr data-mission-id="{{ m.mission_id }}" data-current-project="{{ m.project_id or '' }}" data-current-stage="{{ m.project_stage_id or '' }}" data-has-history="{{ 'true' if m.name_locked else 'false' }}"></tr>
         <td>{{ m.mission_no }}</td>
         <td>{{ m.mission_name }}</td>
         <td><input type="time" class="start-input" value="{{ m.start_time or '' }}"></td>
