@@ -8,12 +8,12 @@
 {% else %}
 
   <h2>待回報</h2>
+  <div class="table-scroll"></div>
   <table>
-    <thead><tr><th>編號</th><th>任務名稱</th><th>開始</th><th>結束</th><th>耗時</th>
-        <th>專案隸屬</th><th>階段隸屬</th><th>標籤</th><th>是否完成</th><th>操作</th></tr></thead>
+    <thead><tr><th>編號</th><th>任務名稱</th><th>開始</th><th>結束</th><th>耗時</th><th>專案隸屬</th><th>階段隸屬</th><th>標籤</th><th>是否完成</th><th>操作</th></tr></thead>
     <tbody id="pending-tbody">
       {% for m in pending %}
-      <tr data-mission-id="{{ m.mission_id }}" data-current-project="{{ m.project_id or '' }}" data-current-stage="{{ m.project_stage_id or '' }}" data-has-history="{{ 'true' if m.name_locked else 'false' }}"></tr>
+      <tr data-mission-id="{{ m.mission_id }}" data-current-project="{{ m.project_id or '' }}" data-current-stage="{{ m.project_stage_id or '' }}" data-has-history="{{ 'true' if m.name_locked else 'false' }}">
         <td>{{ m.mission_no }}</td>
         <td>{{ m.mission_name }}</td>
         <td><input type="time" class="start-input" value="{{ m.start_time or '' }}"></td>
@@ -36,7 +36,7 @@
       {% endfor %}
     </tbody>
   </table>
-
+</div>
   <h2>已回報</h2>
   <table>
     <thead><tr><th>編號</th><th>任務名稱</th><th>開始</th><th>結束</th><th>耗時</th>
@@ -87,6 +87,7 @@
 {% endif %}
 
 <script>
+const unfinishedInfoSection = document.getElementById("unfinished-info-section");
 const reportUrlBase = "{{ url_for('summary.report_mission', date_str=mission_date.isoformat(), mission_id=0) }}".replace(/\/0\/report$/, "");
 const ongoingProjectsUrl = "{{ url_for('project.ongoing_projects_api') }}";
 const ongoingStagesUrlBase = "{{ url_for('project.ongoing_stages_api', project_id=0) }}".replace(/\/0\/api\/ongoing-stages$/, "");
