@@ -39,14 +39,14 @@ def get_created_missions(user_id, active_date):
 
 
 def get_missions_by_date(user_id, active_date):
-    """任務總結頁用，同樣改用mission_active_date。"""
     db = get_db()
     with db.cursor() as cur:
         cur.execute(
-            """SELECT dm.*, ps.stage_name, ps.project_id, p.project_name
+            """SELECT dm.*, ps.stage_name, ps.project_id, p.project_name, um.delay_reason AS unfinished_reason
                FROM daily_mission dm
                LEFT JOIN project_stage ps ON dm.project_stage_id = ps.project_stage_id
                LEFT JOIN project p ON ps.project_id = p.project_id
+               LEFT JOIN unfinished_mission um ON um.mission_id = dm.mission_id AND um.is_operatable = 1
                WHERE dm.user_id = %s AND dm.mission_active_date = %s
                ORDER BY dm.mission_no""",
             (user_id, active_date),
@@ -232,12 +232,7 @@ def delete_mission(user_id, mission_id):
     return (updated > 0), True
 
 
-def report_mission_result(user_id, mission_id, is_finished, start_time, end_time, actual_hours, category, project_stage_id):
-    """這裡修掉一個真實存在的bug：選『已完成』時，原本只敢UPDATE一筆is_operatable=1的追蹤紀錄，
-    但如果這個任務是今天才匯入的，匯入當下並不會留下活著的追蹤紀錄，導致這個UPDATE悄悄地找不到任何資料、
-    那筆追蹤紀錄永遠卡在open狀態、從未被標記resolved。
-    這次的修法是把『匯入』也改成會留下一筆活著的追蹤紀錄(見下方import_mission)，
-    這樣這裡的UPDATE語句本身就能一如預期地找到並正確結案。"""
+def report_mission_result(user_id, mission_id, is_finished, start_time, end_time, actual_hours, category, project_stage_id, delay_reason=None):
     db = get_db()
     with db.cursor() as cur:
         if is_finished:
@@ -272,8 +267,8 @@ def report_mission_result(user_id, mission_id, is_finished, start_time, end_time
                 existing = cur.fetchone()
                 if existing:
                     cur.execute(
-                        "UPDATE unfinished_mission SET start_time=%s, end_time=%s, actual_hours=%s WHERE unfinished_id=%s",
-                        (start_time, end_time, actual_hours, existing["unfinished_id"]),
+                        "UPDATE unfinished_mission SET start_time=%s, end_time=%s, actual_hours=%s, delay_reason=%s WHERE unfinished_id=%s",
+                        (start_time, end_time, actual_hours, delay_reason, existing["unfinished_id"]),
                     )
                 else:
                     cur.execute("SELECT mission_active_date FROM daily_mission WHERE mission_id=%s", (mission_id,))
@@ -285,9 +280,9 @@ def report_mission_result(user_id, mission_id, is_finished, start_time, end_time
                     prev = cur.fetchone()
                     cur.execute(
                         """INSERT INTO unfinished_mission
-                           (user_id, mission_id, status, is_operatable, sequence_exit, follower_id, update_date, start_time, end_time, actual_hours)
-                           VALUES (%s, %s, 'open', 1, 0, %s, %s, %s, %s, %s)""",
-                        (user_id, mission_id, prev["unfinished_id"] if prev else None, active_date, start_time, end_time, actual_hours),
+                           (user_id, mission_id, status, is_operatable, sequence_exit, follower_id, update_date, start_time, end_time, actual_hours, delay_reason)
+                           VALUES (%s, %s, 'open', 1, 0, %s, %s, %s, %s, %s, %s)""",
+                        (user_id, mission_id, prev["unfinished_id"] if prev else None, active_date, start_time, end_time, actual_hours, delay_reason),
                     )
     db.commit()
     if updated:

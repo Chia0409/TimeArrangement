@@ -6,8 +6,7 @@
 {% if status == 'future' %}
   <p><em>尚未開放，這一天還沒發生。</em></p>
 {% else %}
-
-  <h2>待回報</h2>
+<h2>待回報</h2>
   <div class="table-scroll"></div>
   <table>
     <thead><tr><th>編號</th><th>任務名稱</th><th>開始</th><th>結束</th><th>耗時</th><th>專案隸屬</th><th>階段隸屬</th><th>標籤</th><th>是否完成</th><th>操作</th></tr></thead>
@@ -28,7 +27,10 @@
             <option value="1">已完成</option>
             <option value="0">未完成</option>
           </select>
+          <div class="reason-box" hidden><input type="text" class="delay-reason-input" placeholder="未完成原因(必填)"></div>
         </td>
+
+
         <td>{% if can_edit %}<button type="button" class="report-btn">儲存</button>{% endif %}</td>
       </tr>
       {% else %}
@@ -37,53 +39,31 @@
     </tbody>
   </table>
 </div>
-  <h2>已回報</h2>
-  <table>
-    <thead><tr><th>編號</th><th>任務名稱</th><th>開始</th><th>結束</th><th>耗時</th>
-      <th>專案隸屬</th><th>階段隸屬</th><th>標籤</th><th>是否完成</th><th>準時完成</th><th>操作</th></tr></thead>
-    <tbody>
-      {% for m in finished %}
-      <tr>
-        <td>{{ m.mission_no }}</td>
-        <td>{{ m.mission_name }}</td>
-        <td>{{ m.start_time or '-' }}</td>
-        <td>{{ m.end_time or '-' }}</td>
-        <td>{{ m.actual_hours if m.actual_hours is not none else '-' }}</td>
-        <td>{{ m.project_name or 'none' }}</td>
-        <td>{{ m.stage_name or 'none' }}</td>
-        <td>{{ m.category or 'none' }}</td>
-        <td>是</td>
-        <td>{{ "是" if m.is_ONTime_finished else "否" }}</td>
-        <td>已完成</td>
-      </tr>
-      {% else %}
-      <tr><td colspan="10">目前沒有已回報的任務</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
 
-  <h2>已標記未完成</h2>
-  <table>
-    <thead><tr><th>編號</th><th>任務名稱</th><th>開始</th><th>結束</th><th>耗時</th>
-        <th>專案隸屬</th><th>階段隸屬</th><th>標籤</th></tr></thead>
-    <tbody>
-      {% for m in unfinished %}
-      <tr>
-        <td>{{ m.mission_no }}</td>
-        <td>{{ m.mission_name }}</td>
-        <td>{{ m.start_time or '-' }}</td>
-        <td>{{ m.end_time or '-' }}</td>
-        <td>{{ m.actual_hours if m.actual_hours is not none else '-' }}</td>
-        <td>{{ m.project_name or 'none' }}</td>
-        <td>{{ m.stage_name or 'none' }}</td>
-        <td>{{ m.category or 'none' }}</td>
-      </tr>
-      {% else %}
-      <tr><td colspan="8">目前沒有被標記未完成的任務</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
-
+<h2>已回報</h2>
+<table>
+  <thead><tr><th>編號</th><th>任務名稱</th><th>開始</th><th>結束</th><th>耗時</th>
+    <th>專案隸屬</th><th>階段隸屬</th><th>標籤</th><th>是否完成</th><th>未完成原因</th><th>準時完成</th></tr></thead>
+  <tbody>
+    {% for m in reported %}
+    <tr>
+      <td>{{ m.mission_no }}</td>
+      <td>{{ m.mission_name }}</td>
+      <td>{{ m.start_time or '-' }}</td>
+      <td>{{ m.end_time or '-' }}</td>
+      <td>{{ m.actual_hours if m.actual_hours is not none else '-' }}</td>
+      <td>{{ m.project_name or 'none' }}</td>
+      <td>{{ m.stage_name or 'none' }}</td>
+      <td>{{ m.category or 'none' }}</td>
+      <td>{{ "是" if m.status == 'finished' else "否" }}</td>
+      <td>{{ m.unfinished_reason or '-' }}</td>
+      <td>{{ "是" if m.is_ONTime_finished else ("否" if m.status == 'finished' else "-") }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="11">目前沒有已回報的任務</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
 {% endif %}
 
 <script>
@@ -162,5 +142,42 @@ document.getElementById("pending-tbody")?.addEventListener("click", function (e)
     .then((d) => { if (!d.success) { alert(d.message || "送出失敗"); return; } location.reload(); })
     .catch(() => alert("網路錯誤，送出失敗"));
 });
+
+document.getElementById("pending-tbody")?.addEventListener("change", function (e) {
+  if (!e.target.classList.contains("finish-select")) return;
+  const row = e.target.closest("tr");
+  row.querySelector(".reason-box").hidden = e.target.value !== "0";
+});
+
+document.getElementById("pending-tbody")?.addEventListener("click", function (e) {
+  if (!e.target.classList.contains("report-btn")) return;
+  const row = e.target.closest("tr");
+  const missionId = row.dataset.missionId;
+  const select = row.querySelector(".finish-select");
+  if (!select.value) { alert("請選擇是否完成"); return; }
+
+  let delayReason = "";
+  if (select.value === "0") {
+    delayReason = row.querySelector(".delay-reason-input").value.trim();
+    if (!delayReason) { alert("請填寫未完成原因"); return; }
+  }
+
+  if (!confirm("儲存後不可再次修改，確定要送出嗎？")) return;
+
+  const body = new URLSearchParams({
+    is_finished: select.value,
+    start_time: row.querySelector(".start-input").value,
+    end_time: row.querySelector(".end-input").value,
+    category: row.querySelector(".category-input").value.trim(),
+    project_stage_id: row.querySelector(".stage-select").value,
+    delay_reason: delayReason,
+  });
+
+  fetch(`${reportUrlBase}/${missionId}/report`, { method: "POST", body })
+    .then((r) => r.json())
+    .then((d) => { if (!d.success) { alert(d.message || "送出失敗"); return; } location.reload(); })
+    .catch(() => alert("網路錯誤，送出失敗"));
+});
+
 </script>
 {% endblock %}

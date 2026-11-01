@@ -26,19 +26,27 @@ def summary(date_str):
     status = get_day_status(mission_date, today)
 
     if status == "future":
-        return render_template("summary.html", mission_date=mission_date, status=status, pending=[], finished=[], unfinished=[], can_edit=False)
+        return render_template("summary.html", mission_date=mission_date, status=status, pending=[], reported=[], can_edit=False)
+        # return render_template("summary.html", mission_date=mission_date, status=status, pending=[], finished=[], unfinished=[], can_edit=False)
     
     mark_overdue_as_unfinished(user_id, today)
     create_chains_for_newly_unfinished(user_id)
 
     all_missions = get_missions_by_date(user_id, mission_date)
     pending = [m for m in all_missions if m["status"] == "default"]
-    finished = [m for m in all_missions if m["status"] == "finished"]
-    unfinished = [m for m in all_missions if m["status"] == "unfinished"]
+    reported = sorted(
+        (m for m in all_missions if m["status"] in ("finished", "unfinished")),
+        key=lambda m: m["mission_no"],
+    )
 
     return render_template("summary.html", mission_date=mission_date, status=status,
-                            pending=pending, finished=finished, unfinished=unfinished, can_edit=(status == "today"))
+                            pending=pending, reported=reported, can_edit=(status == "today"))
+    # pending = [m for m in all_missions if m["status"] == "default"]
+    # finished = [m for m in all_missions if m["status"] == "finished"]
+    # unfinished = [m for m in all_missions if m["status"] == "unfinished"]
 
+    # return render_template("summary.html", mission_date=mission_date, status=status,
+    #                         pending=pending, finished=finished, unfinished=unfinished, can_edit=(status == "today"))
 
 @summary_bp.route("/summary/<date_str>/mission/<int:mission_id>/report", methods=["POST"])
 @login_required
@@ -52,6 +60,10 @@ def report_mission(date_str, mission_id):
     if is_finished not in ("0", "1"):
         return jsonify(success=False, message="請選擇是否完成"), 400
 
+    delay_reason = request.form.get("delay_reason", "").strip() or None
+    if is_finished == "0" and not delay_reason:
+        return jsonify(success=False, message="請填寫未完成原因"), 400
+
     start_time = request.form.get("start_time") or None
     end_time = request.form.get("end_time") or None
     actual_hours = _compute_hours(start_time, end_time)
@@ -59,8 +71,31 @@ def report_mission(date_str, mission_id):
     stage_id = request.form.get("project_stage_id", "")
     project_stage_id = int(stage_id) if stage_id.isdigit() else None
 
-    if not report_mission_result(user_id, mission_id, int(is_finished), start_time, end_time, actual_hours, category, project_stage_id):
+    if not report_mission_result(user_id, mission_id, int(is_finished), start_time, end_time, actual_hours, category, project_stage_id, delay_reason):
         return jsonify(success=False, message="這筆任務目前不能回報"), 400
     return jsonify(success=True)
+
+# @summary_bp.route("/summary/<date_str>/mission/<int:mission_id>/report", methods=["POST"])
+# @login_required
+# def report_mission(date_str, mission_id):
+#     user_id = session["user_id"]
+#     mission_date = _parse_date(date_str)
+#     if get_day_status(mission_date) != "today":
+#         return jsonify(success=False, message="只有今天的任務可以回報"), 403
+
+#     is_finished = request.form.get("is_finished", "")
+#     if is_finished not in ("0", "1"):
+#         return jsonify(success=False, message="請選擇是否完成"), 400
+
+#     start_time = request.form.get("start_time") or None
+#     end_time = request.form.get("end_time") or None
+#     actual_hours = _compute_hours(start_time, end_time)
+#     category = request.form.get("category", "").strip() or None
+#     stage_id = request.form.get("project_stage_id", "")
+#     project_stage_id = int(stage_id) if stage_id.isdigit() else None
+
+#     if not report_mission_result(user_id, mission_id, int(is_finished), start_time, end_time, actual_hours, category, project_stage_id):
+#         return jsonify(success=False, message="這筆任務目前不能回報"), 400
+#     return jsonify(success=True)
 
 
